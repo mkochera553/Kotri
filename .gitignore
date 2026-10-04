@@ -10,3 +10,7 @@
 /dataSources.local.xml
 
 scans/
+config.yaml
+*.iml
+.venv/
+*.egg-info/
