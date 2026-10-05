@@ -6,6 +6,7 @@ loopback host, ignores proxy environment variables, and refuses redirects.
 
 from __future__ import annotations
 
+import http.client
 import json
 import logging
 import time
@@ -44,6 +45,10 @@ def validate_base_url(base_url: str) -> str:
             f"base_url host {parsed.hostname!r} is not local; findings must not "
             f"leave this machine (allowed: {sorted(ALLOWED_HOSTS)})"
         )
+    try:
+        parsed.port  # urlparse only validates the port lazily; fail now, not mid-request
+    except ValueError as exc:
+        raise ValueError(f"base_url has an invalid port: {base_url!r}") from exc
     return base_url.rstrip("/")
 
 
@@ -170,7 +175,9 @@ class LLMClient:
                     raise LLMError(f"runtime returned HTTP {exc.code}") from exc
                 last_error = exc
                 continue
-            except OSError as exc:  # URLError, timeouts, connection resets
+            except (OSError, http.client.HTTPException) as exc:
+                # URLError, timeouts, resets; HTTPException covers a connection dropped
+                # mid-response (IncompleteRead, BadStatusLine), which isn't an OSError.
                 last_error = exc
                 continue
             return self._extract_content(body)

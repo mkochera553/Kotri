@@ -1,3 +1,4 @@
+import http.client
 import io
 import json
 import logging
@@ -107,6 +108,8 @@ def test_validate_base_url_accepts_loopback(url: str) -> None:
         "http://localhost.evil.com/v1",
         "ftp://127.0.0.1/v1",
         "127.0.0.1:11434/v1",
+        "http://127.0.0.1:abc/v1",  # port is validated lazily by urlparse
+        "http://localhost:99999/v1",
         "",
     ],
 )
@@ -158,6 +161,28 @@ def test_chat_retries_connection_errors() -> None:
     client, opener = _client([urllib.error.URLError("refused"), CHAT_BODY])
     assert client.chat([]) == '{"ok": true}'
     assert len(opener.requests) == 2
+
+
+@pytest.mark.parametrize(
+    "error",
+    [
+        http.client.IncompleteRead(b"{", 100),
+        http.client.BadStatusLine("garbage"),
+        http.client.RemoteDisconnected("closed"),
+    ],
+)
+def test_chat_retries_dropped_connections(error: Exception) -> None:
+    client, opener = _client([error, CHAT_BODY])
+    assert client.chat([]) == '{"ok": true}'
+    assert len(opener.requests) == 2
+
+
+def test_chat_wraps_persistent_http_exceptions_in_llm_error() -> None:
+    client, opener = _client([http.client.IncompleteRead(b"")] * 3, max_retries=2)
+
+    with pytest.raises(LLMError, match="3 attempts"):
+        client.chat([])
+    assert len(opener.requests) == 3
 
 
 def test_chat_raises_after_exhausting_retries() -> None:
