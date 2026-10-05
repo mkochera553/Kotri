@@ -329,3 +329,49 @@ def test_triage_propagates_transport_errors() -> None:
     client, _ = _client([TimeoutError()] * 3)
     with pytest.raises(LLMError):
         client.triage(_finding())
+
+
+def test_transport_error_is_counted_separately_from_parse_stats() -> None:
+    client, _ = _client([TimeoutError()] * 3)
+
+    with pytest.raises(LLMError):
+        client.triage(_finding())
+
+    assert client.stats.transport_errors == 1
+    assert (client.stats.calls, client.stats.retries) == (0, 0)
+    assert (client.stats.recovered, client.stats.failures) == (0, 0)
+    assert client.stats.failure_rate == 0.0  # no denominator inflation
+
+
+def test_transport_error_on_retry_leaves_parse_counters_reconciled() -> None:
+    client, _ = _client([])
+
+    def fake_chat(messages):
+        if len(messages) == 2:
+            return "not json"  # first attempt: unparseable
+        raise LLMError("runtime went away")  # retry attempt: transport failure
+
+    client.chat = fake_chat  # type: ignore[method-assign]
+
+    with pytest.raises(LLMError):
+        client.triage(_finding())
+
+    stats = client.stats
+    assert stats.transport_errors == 1
+    assert (stats.calls, stats.retries, stats.recovered, stats.failures) == (0, 0, 0, 0)
+
+
+def test_parse_stats_invariants_hold_across_mixed_outcomes() -> None:
+    client, _ = _client([])
+    replies = [VALID_REPLY, "bad", VALID_REPLY, "bad", "bad"]
+
+    def fake_chat(messages):
+        return replies.pop(0)
+
+    client.chat = fake_chat  # type: ignore[method-assign]
+    for _ in range(3):
+        client.triage(_finding())
+
+    s = client.stats
+    assert s.retries == s.recovered + s.failures
+    assert s.calls - s.retries == 1  # parsed first try

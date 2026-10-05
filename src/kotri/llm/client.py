@@ -61,12 +61,18 @@ def _build_opener() -> urllib.request.OpenerDirector:
 
 @dataclass
 class ParseStats:
-    """How often model output failed to parse; a quality metric for small models."""
+    """How often model output failed to parse; a quality metric for small models.
+
+    Only triages that got a model reply count toward calls, so the rates measure the
+    model. Invariants: retries == recovered + failures, and calls - retries is the
+    number that parsed first try. Transport errors are tracked separately.
+    """
 
     calls: int = 0
     retries: int = 0
     recovered: int = 0
     failures: int = 0
+    transport_errors: int = 0
 
     @property
     def retry_rate(self) -> float:
@@ -188,10 +194,19 @@ class LLMClient:
 
         Output that fails validation is retried once with the error fed back;
         a second failure is recorded as a parse failure, not raised. Transport
-        problems still raise LLMError, since they aren't a model-quality signal.
+        problems still raise LLMError, since they aren't a model-quality signal;
+        they are counted in stats.transport_errors and leave the other counters alone.
         """
+        try:
+            outcome = self._triage(finding)
+        except LLMError:
+            self.stats.transport_errors += 1
+            raise
+        self._record(outcome)
+        return outcome
+
+    def _triage(self, finding: Finding) -> TriageOutcome:
         start = time.perf_counter()
-        self.stats.calls += 1
         messages = build_messages(finding)
 
         reply = self.chat(messages)
@@ -199,11 +214,9 @@ class LLMClient:
             result = parse_triage_output(reply)
             return self._outcome(finding, result, 1, start)
         except TriageParseError as first_error:
-            self.stats.retries += 1
             logger.warning(
-                "unparseable triage output for %s from %s; retrying once "
-                "(retry rate %.1f%%)",
-                finding.id, self.model, self.stats.retry_rate * 100,
+                "unparseable triage output for %s from %s; retrying once",
+                finding.id, self.model,
             )
             retry_messages = build_retry_messages(messages, reply, str(first_error))
 
@@ -211,13 +224,21 @@ class LLMClient:
         try:
             result = parse_triage_output(reply)
         except TriageParseError as exc:
-            self.stats.failures += 1
             logger.error(
                 "triage parse failure for %s from %s after retry", finding.id, self.model
             )
             return self._outcome(finding, None, 2, start, error=str(exc))
-        self.stats.recovered += 1
         return self._outcome(finding, result, 2, start)
+
+    def _record(self, outcome: TriageOutcome) -> None:
+        """Update parse stats from a completed triage."""
+        self.stats.calls += 1
+        if outcome.attempts > 1:
+            self.stats.retries += 1
+            if outcome.parse_failed:
+                self.stats.failures += 1
+            else:
+                self.stats.recovered += 1
 
     def _outcome(
         self,
@@ -240,7 +261,8 @@ class LLMClient:
         """Log the parse-retry/failure summary; call once at the end of a run."""
         s = self.stats
         logger.info(
-            "%s parse stats: %d calls, %d retried (%.1f%%), %d recovered, %d failed (%.1f%%)",
+            "%s parse stats: %d calls, %d retried (%.1f%%), %d recovered, %d failed (%.1f%%), "
+            "%d transport errors",
             self.model, s.calls, s.retries, s.retry_rate * 100,
-            s.recovered, s.failures, s.failure_rate * 100,
+            s.recovered, s.failures, s.failure_rate * 100, s.transport_errors,
         )
