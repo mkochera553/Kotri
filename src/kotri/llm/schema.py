@@ -5,6 +5,7 @@ LLM output is untrusted: nothing here trusts the model to return clean JSON.
 
 from __future__ import annotations
 
+import json
 import re
 from enum import Enum
 from typing import Any
@@ -45,19 +46,24 @@ class TriageResult(BaseModel):
         return _normalize_enum_text(value)
 
 
-_FENCE_RE = re.compile(r"^```(?:json)?\s*(.*?)\s*```$", re.DOTALL | re.IGNORECASE)
+_DECODER = json.JSONDecoder()
 
 
 def _extract_json_text(text: str) -> str:
-    """Strip markdown fences or surrounding prose so only the JSON object remains."""
+    """Return the first complete JSON object in text, ignoring fences and prose.
+
+    Prose before or after the object (including stray braces in it) is skipped.
+    If no object decodes, the stripped text is returned so validation reports why.
+    """
     text = text.strip()
-    fence = _FENCE_RE.match(text)
-    if fence:
-        text = fence.group(1)
-    if not text.startswith("{"):
-        start, end = text.find("{"), text.rfind("}")
-        if start != -1 and end > start:
-            text = text[start : end + 1]
+    start = text.find("{")
+    while start != -1:
+        try:
+            _, end = _DECODER.raw_decode(text, start)
+        except ValueError:
+            start = text.find("{", start + 1)
+        else:
+            return text[start:end]
     return text
 
 

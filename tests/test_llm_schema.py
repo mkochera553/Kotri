@@ -27,6 +27,21 @@ def test_parse_extracts_object_from_surrounding_prose():
     assert parse_triage_output(text).adjusted_severity == Severity.HIGH
 
 
+def test_parse_extracts_object_followed_by_trailing_prose() -> None:
+    text = FIXTURE.read_text(encoding="utf-8") + "\n\nLet me know if you need more."
+    assert parse_triage_output(text).verdict == Verdict.LIKELY_TRUE_POSITIVE
+
+
+def test_parse_extracts_object_after_fence_and_trailing_prose() -> None:
+    text = "```json\n" + FIXTURE.read_text(encoding="utf-8") + "\n```\nDone."
+    assert parse_triage_output(text).verdict == Verdict.LIKELY_TRUE_POSITIVE
+
+
+def test_parse_skips_stray_braces_in_prose() -> None:
+    text = "Note {see below} {x}: " + FIXTURE.read_text(encoding="utf-8") + " (cf. {1})"
+    assert parse_triage_output(text).adjusted_severity == Severity.HIGH
+
+
 def test_parse_normalizes_enum_casing_and_spacing():
     text = (
         '{"verdict": "Likely False Positive", "adjusted_severity": "LOW",'
