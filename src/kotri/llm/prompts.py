@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import re
+
 from kotri.ingest.models import Finding
 
 Message = dict[str, str]
@@ -36,9 +38,9 @@ Rule: {rule}
 Location: {location}
 Scanner severity: {severity}
 Scanner message:
-<<<
+{open_delim}
 {raw_message}
->>>"""
+{close_delim}"""
 
 _RETRY_TEMPLATE = """\
 Your previous reply could not be parsed: {error}
@@ -60,14 +62,30 @@ def truncate(text: str, limit: int) -> str:
     return text[: limit - len(_TRUNCATION_MARKER)] + _TRUNCATION_MARKER
 
 
+def delimiters(text: str) -> tuple[str, str]:
+    """Open/close markers for untrusted text that the text itself cannot close.
+
+    The close marker is a run of '>' longer than any run inside text (minimum 3), so
+    scanner output can't fake the end of the data block. Deterministic, unlike a
+    random token, so eval runs stay repeatable.
+    """
+    longest = max((len(run) for run in re.findall(r">+", text)), default=0)
+    width = max(3, longest + 1)
+    return "<" * width, ">" * width
+
+
 def build_messages(finding: Finding) -> list[Message]:
     """Chat messages asking the model to triage one finding."""
+    raw_message = truncate(finding.raw_message, MAX_MESSAGE_CHARS)
+    open_delim, close_delim = delimiters(raw_message)
     user = _FINDING_TEMPLATE.format(
         source_tool=finding.source_tool.value,
         rule=finding.rule,
         location=truncate(finding.location, MAX_LOCATION_CHARS),
         severity=finding.severity.value,
-        raw_message=truncate(finding.raw_message, MAX_MESSAGE_CHARS),
+        raw_message=raw_message,
+        open_delim=open_delim,
+        close_delim=close_delim,
     )
     return [
         {"role": "system", "content": SYSTEM_PROMPT},
