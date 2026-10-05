@@ -1,0 +1,6 @@
+{
+  "verdict": "likely_true_positive",
+  "adjusted_severity": "high",
+  "exploitability_rationale": "The JWT signing secret is hardcoded in source, so anyone with repo access can forge tokens.",
+  "suggested_fix": "Load the secret from an environment variable or secrets manager and rotate the exposed value."
+}

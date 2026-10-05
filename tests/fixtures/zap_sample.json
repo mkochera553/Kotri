@@ -37,6 +37,7 @@
           "instances": [
             { "id": "3", "uri": "http://host.docker.internal:3000/", "method": "GET" }
           ],
+          "otherinfo": "<p>Alert level note.</p>",
           "count": "1",
           "solution": "<p>Add the X-Frame-Options header.</p>",
           "cweid": "1021",
@@ -51,7 +52,15 @@
           "riskdesc": "High (Medium)",
           "desc": "<p>The response contains a redirect to an off-site location based on user-controlled input.</p>",
           "instances": [
-            { "id": "4", "uri": "http://host.docker.internal:3000/redirect", "method": "GET", "param": "to" },
+            {
+              "id": "4",
+              "uri": "http://host.docker.internal:3000/redirect",
+              "method": "GET",
+              "param": "to",
+              "attack": "https://evil.example/<script>",
+              "evidence": "Location: https://evil.example/<script>",
+              "otherinfo": "The 302 response contained user input in the Location header."
+            },
             { "id": "5", "uri": "http://host.docker.internal:3000/redirect", "method": "GET", "param": "redirectUrl" }
           ],
           "count": "2",

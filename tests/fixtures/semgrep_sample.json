@@ -8,7 +8,8 @@
       "end": { "line": 42, "col": 40, "offset": 939 },
       "extra": {
         "message": "A hardcoded HMAC key was found. Store it in a secret manager instead.",
-        "severity": "WARNING"
+        "severity": "WARNING",
+        "lines": "requires login"
       }
     },
     {
@@ -18,7 +19,18 @@
       "end": { "line": 54, "col": 50, "offset": 1249 },
       "extra": {
         "message": "A hardcoded JWT secret was found. This is a strong indicator of a secret.",
-        "severity": "ERROR"
+        "severity": "ERROR",
+        "lines": "const secret = 'hardcoded-jwt-secret'",
+        "metadata": {
+          "cwe": ["CWE-798: Use of Hard-coded Credentials"],
+          "owasp": [
+            "A07:2021 - Identification and Authentication Failures",
+            "A07:2025 - Authentication Failures"
+          ],
+          "confidence": "HIGH",
+          "likelihood": "HIGH",
+          "impact": "MEDIUM"
+        }
       }
     },
     {
