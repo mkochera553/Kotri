@@ -1,3 +1,4 @@
+import json
 from pathlib import Path
 
 from kotri.ingest.models import Severity, SourceTool
@@ -35,3 +36,32 @@ def test_parse_semgrep_duplicate_results_get_same_id():
 
     assert len(hmac_findings) == 2
     assert hmac_findings[0].id == hmac_findings[1].id
+
+
+def test_parse_semgrep_skips_malformed_result_without_crashing(tmp_path: Path) -> None:
+    malformed = {
+        "results": [
+            {
+                "check_id": "javascript.lang.security.audit.hardcoded-hmac-key.hardcoded-hmac-key",
+                "path": "lib/insecurity.ts",
+                "start": {"line": 42, "col": 1, "offset": 900},
+                "extra": {"message": "missing severity key below"},
+            },
+            {
+                "check_id": "javascript.jsonwebtoken.security.jwt-hardcode.hardcoded-jwt-secret",
+                "path": "lib/insecurity.ts",
+                "start": {"line": 54, "col": 1, "offset": 1200},
+                "extra": {
+                    "message": "A hardcoded JWT secret was found.",
+                    "severity": "ERROR",
+                },
+            },
+        ]
+    }
+    path = tmp_path / "malformed.json"
+    path.write_text(json.dumps(malformed), encoding="utf-8")
+
+    findings = parse_semgrep(path)
+
+    assert len(findings) == 1
+    assert "jwt-hardcode" in findings[0].rule
