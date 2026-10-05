@@ -46,6 +46,18 @@ Your previous reply could not be parsed: {error}
 Reply again with only the JSON object described above."""
 
 _MAX_ERROR_CHARS = 500
+# Local runtimes default to a small context window and silently drop the start of an
+# oversized prompt, which is where the instructions are. Keep the finding text bounded.
+MAX_MESSAGE_CHARS = 4000
+MAX_LOCATION_CHARS = 500
+_TRUNCATION_MARKER = "... [truncated]"
+
+
+def truncate(text: str, limit: int) -> str:
+    """Cut text to at most limit characters, marking the cut."""
+    if len(text) <= limit:
+        return text
+    return text[: limit - len(_TRUNCATION_MARKER)] + _TRUNCATION_MARKER
 
 
 def build_messages(finding: Finding) -> list[Message]:
@@ -53,9 +65,9 @@ def build_messages(finding: Finding) -> list[Message]:
     user = _FINDING_TEMPLATE.format(
         source_tool=finding.source_tool.value,
         rule=finding.rule,
-        location=finding.location,
+        location=truncate(finding.location, MAX_LOCATION_CHARS),
         severity=finding.severity.value,
-        raw_message=finding.raw_message,
+        raw_message=truncate(finding.raw_message, MAX_MESSAGE_CHARS),
     )
     return [
         {"role": "system", "content": SYSTEM_PROMPT},

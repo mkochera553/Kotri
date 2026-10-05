@@ -4,6 +4,7 @@ llm:
   base_url: http://127.0.0.1:11434/v1   # Ollama's OpenAI-compatible endpoint
   timeout_seconds: 120                  # per request
   max_retries: 2                        # connection/timeout/5xx retries (not parse retries)
+  max_tokens: 1024                      # cap on generated tokens per reply
   models:                               # compared by eval/run_eval.py
     - llama3.1:8b
     - qwen2.5:7b

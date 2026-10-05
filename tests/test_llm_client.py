@@ -10,7 +10,14 @@ from urllib.response import addinfourl
 import pytest
 
 from kotri.ingest.models import Finding, Severity, SourceTool
-from kotri.llm.client import LLMClient, LLMError, _build_opener, _NoRedirect, validate_base_url
+from kotri.llm.client import (
+    DEFAULT_MAX_TOKENS,
+    LLMClient,
+    LLMError,
+    _build_opener,
+    _NoRedirect,
+    validate_base_url,
+)
 
 FIXTURES = Path(__file__).parent / "fixtures"
 CHAT_BODY = (FIXTURES / "chat_completion.json").read_bytes()
@@ -127,7 +134,14 @@ def test_chat_returns_message_content_and_sends_expected_request() -> None:
     assert body["model"] == "test-model"
     assert body["temperature"] == 0.0
     assert body["response_format"] == {"type": "json_object"}
+    assert body["max_tokens"] == DEFAULT_MAX_TOKENS
     assert opener.timeouts == [7.5]
+
+
+def test_chat_sends_configured_max_tokens() -> None:
+    client, opener = _client([CHAT_BODY], max_tokens=256)
+    client.chat([])
+    assert json.loads(opener.requests[0].data)["max_tokens"] == 256
 
 
 def test_chat_retries_transient_errors_then_succeeds() -> None:
@@ -246,6 +260,10 @@ def test_from_config_reads_llm_section() -> None:
         {"base_url": BASE_URL, "timeout_seconds": 30, "max_retries": 5, "models": ["a"]}, "a"
     )
     assert (client.model, client.timeout, client.max_retries) == ("a", 30, 5)
+    assert client.max_tokens == DEFAULT_MAX_TOKENS  # absent key falls back to the default
+
+    configured = LLMClient.from_config({"base_url": BASE_URL, "max_tokens": 64}, "a")
+    assert configured.max_tokens == 64
 
 
 # --- triage: parse retry and metrics ----------------------------------------

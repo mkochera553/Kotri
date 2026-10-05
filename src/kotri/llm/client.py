@@ -24,6 +24,10 @@ logger = logging.getLogger(__name__)
 
 ALLOWED_HOSTS = frozenset({"127.0.0.1", "localhost", "::1"})
 _RETRYABLE_STATUS = frozenset({429, 500, 502, 503, 504})
+# Caps generation so a looping model can't run until the timeout. Replies asked for
+# in the prompt are far smaller; a reply cut off at the cap fails to parse and is
+# retried/recorded like any other parse failure.
+DEFAULT_MAX_TOKENS = 1024
 
 
 class LLMError(RuntimeError):
@@ -93,6 +97,7 @@ class LLMClient:
         max_retries: int = 2,
         backoff: float = 1.0,
         temperature: float = 0.0,
+        max_tokens: int = DEFAULT_MAX_TOKENS,
         opener: urllib.request.OpenerDirector | None = None,
         sleep: Callable[[float], None] = time.sleep,
     ) -> None:
@@ -102,6 +107,7 @@ class LLMClient:
         self.max_retries = max_retries
         self.backoff = backoff
         self.temperature = temperature
+        self.max_tokens = max_tokens
         self.stats = ParseStats()
         self._opener = opener or _build_opener()
         self._sleep = sleep
@@ -114,6 +120,7 @@ class LLMClient:
             model,
             timeout=llm_config.get("timeout_seconds", 120.0),
             max_retries=llm_config.get("max_retries", 2),
+            max_tokens=llm_config.get("max_tokens", DEFAULT_MAX_TOKENS),
         )
 
     def chat(self, messages: list[Message]) -> str:
@@ -127,6 +134,7 @@ class LLMClient:
                 "model": self.model,
                 "messages": messages,
                 "temperature": self.temperature,
+                "max_tokens": self.max_tokens,
                 "stream": False,
                 "response_format": {"type": "json_object"},
             }
