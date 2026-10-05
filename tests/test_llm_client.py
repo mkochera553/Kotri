@@ -2,12 +2,15 @@ import io
 import json
 import logging
 import urllib.error
+import urllib.request
+from email.message import Message
 from pathlib import Path
+from urllib.response import addinfourl
 
 import pytest
 
 from kotri.ingest.models import Finding, Severity, SourceTool
-from kotri.llm.client import LLMClient, LLMError, validate_base_url
+from kotri.llm.client import LLMClient, LLMError, _build_opener, _NoRedirect, validate_base_url
 
 FIXTURES = Path(__file__).parent / "fixtures"
 CHAT_BODY = (FIXTURES / "chat_completion.json").read_bytes()
@@ -159,12 +162,73 @@ def test_chat_does_not_retry_client_errors() -> None:
     assert len(opener.requests) == 1
 
 
-def test_chat_does_not_follow_redirects() -> None:
+def test_chat_treats_redirect_status_as_non_retryable_error() -> None:
     client, opener = _client([_http_error(302), CHAT_BODY])
 
     with pytest.raises(LLMError, match="302"):
         client.chat([])
     assert len(opener.requests) == 1
+
+
+class _ScriptedHTTP(urllib.request.BaseHandler):
+    """Stands in for the socket layer so the real opener chain runs without network.
+
+    handler_order 200 puts it after ProxyHandler (100) but before the real HTTPHandler (500).
+    """
+
+    handler_order = 200
+
+    def __init__(self, code: int = 200, location: str | None = None) -> None:
+        self.code = code
+        self.location = location
+        self.opened: list[urllib.request.Request] = []
+
+    def http_open(self, request: urllib.request.Request) -> addinfourl:
+        self.opened.append(request)
+        headers = Message()
+        if self.location:
+            headers["Location"] = self.location
+        response = addinfourl(io.BytesIO(CHAT_BODY), headers, request.full_url, self.code)
+        response.msg = "scripted"  # http.client responses expose the reason phrase as .msg
+        return response
+
+
+@pytest.mark.parametrize("code", [301, 302, 303, 307, 308])
+def test_default_opener_does_not_follow_redirects(code: int) -> None:
+    transport = _ScriptedHTTP(code, location="http://remote.example.com/steal")
+    opener = _build_opener()
+    opener.add_handler(transport)
+    request = urllib.request.Request(
+        f"{BASE_URL}/chat/completions", data=b"{}", method="POST"
+    )
+
+    with pytest.raises(urllib.error.HTTPError) as excinfo:
+        opener.open(request, timeout=1)
+
+    assert excinfo.value.code == code
+    assert [r.full_url for r in transport.opened] == [f"{BASE_URL}/chat/completions"]
+
+
+def test_default_opener_ignores_proxy_environment(monkeypatch: pytest.MonkeyPatch) -> None:
+    for name in ("http_proxy", "HTTP_PROXY", "https_proxy", "HTTPS_PROXY"):
+        monkeypatch.setenv(name, "http://proxy.example.com:3128")
+    transport = _ScriptedHTTP()
+    opener = _build_opener()
+    opener.add_handler(transport)
+    request = urllib.request.Request(f"{BASE_URL}/chat/completions")
+
+    opener.open(request, timeout=1).close()
+
+    assert request.host == "127.0.0.1:11434"  # a proxy would have rewritten this
+    assert transport.opened == [request]
+
+
+def test_client_uses_hardened_opener_by_default() -> None:
+    client = LLMClient(BASE_URL, "m")
+    handlers = client._opener.handlers  # type: ignore[attr-defined]
+
+    assert any(isinstance(h, _NoRedirect) for h in handlers)
+    assert not any(type(h) is urllib.request.HTTPRedirectHandler for h in handlers)
 
 
 @pytest.mark.parametrize(
