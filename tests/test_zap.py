@@ -8,8 +8,8 @@ FIXTURE = Path(__file__).parent / "fixtures" / "zap_sample.json"
 
 def test_parse_zap_flattens_instances_to_findings():
     findings = parse_zap(FIXTURE)
-    # 2 instances for the CSP alert + 1 instance for clickjacking
-    assert len(findings) == 3
+    # 2 instances for CSP + 1 for clickjacking + 2 for off-site redirect
+    assert len(findings) == 5
 
 
 def test_parse_zap_maps_fields():
@@ -30,3 +30,12 @@ def test_parse_zap_distinct_instances_get_distinct_ids():
     csp_findings = [f for f in findings if f.rule == "Content Security Policy (CSP) Header Not Set"]
 
     assert csp_findings[0].id != csp_findings[1].id
+
+
+def test_parse_zap_distinct_params_on_same_uri_get_distinct_locations_and_ids():
+    findings = parse_zap(FIXTURE)
+    redirect_findings = [f for f in findings if f.rule == "Off-site Redirect"]
+
+    assert len(redirect_findings) == 2
+    assert redirect_findings[0].location != redirect_findings[1].location
+    assert redirect_findings[0].id != redirect_findings[1].id

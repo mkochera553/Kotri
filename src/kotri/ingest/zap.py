@@ -39,7 +39,9 @@ def parse_zap(path: Path) -> list[Finding]:
             raw_message = _strip_html(alert.get("desc", ""))
 
             for instance in alert.get("instances", []):
-                location = instance["uri"]
+                uri = instance["uri"]
+                param = instance.get("param", "")
+                location = f"{uri}#{param}" if param else uri
                 findings.append(
                     Finding(
                         id=make_finding_id(SourceTool.ZAP, rule, location),

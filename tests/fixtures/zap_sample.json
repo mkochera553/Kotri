@@ -41,6 +41,23 @@
           "solution": "<p>Add the X-Frame-Options header.</p>",
           "cweid": "1021",
           "wascid": "15"
+        },
+        {
+          "pluginid": "40012",
+          "alert": "Off-site Redirect",
+          "name": "Off-site Redirect",
+          "riskcode": "3",
+          "confidence": "2",
+          "riskdesc": "High (Medium)",
+          "desc": "<p>The response contains a redirect to an off-site location based on user-controlled input.</p>",
+          "instances": [
+            { "id": "4", "uri": "http://host.docker.internal:3000/redirect", "method": "GET", "param": "to" },
+            { "id": "5", "uri": "http://host.docker.internal:3000/redirect", "method": "GET", "param": "redirectUrl" }
+          ],
+          "count": "2",
+          "solution": "<p>Validate redirect targets against an allowlist.</p>",
+          "cweid": "601",
+          "wascid": "38"
         }
       ]
     }
