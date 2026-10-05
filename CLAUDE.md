@@ -33,7 +33,9 @@ eval/
   labels.csv       # hand-labeled findings (ground truth; do not edit without asking)
   run_eval.py      # agreement, parse-failure rate, latency per model
 data/              # trimmed sample scan JSON so others can reproduce results
-tests/             # pytest tests and small fixture files
+tests/             # pytest tests; subdirectories mirror src/kotri/ (ingest/, llm/)
+  conftest.py      # shared fixtures, e.g. make_finding
+  fixtures/        # small shared sample files
 config.example.yaml  # runtime base URL and model names (copy to config.yaml locally)
 ```
 
@@ -45,7 +47,8 @@ Put new code in the module that owns that responsibility. Parsers only parse; th
 
 - Python 3.11+. Small, single-purpose modules and functions.
 - Type hints on every function signature and return value. Pydantic v2 models for data crossing module boundaries.
-- Every module gets pytest tests in `tests/`. Use small fixture files in `tests/fixtures/`; tests must never call a real LLM or need network access. Mock the client.
+- Every module gets pytest tests in `tests/`, in the directory that mirrors its package: `src/kotri/llm/client.py` is tested by `tests/llm/test_client.py`, and modules at the package root (`pipeline.py`, `report.py`) by `tests/test_pipeline.py` etc. Pytest runs with `--import-mode=importlib`, so test files in different directories may share a basename; don't add `__init__.py` to `tests/`.
+- Use small fixture files in `tests/fixtures/` (from a test file one directory down: `Path(__file__).parents[1] / "fixtures"`) and `tests/conftest.py` fixtures such as `make_finding` instead of per-file copies. Tests must never call a real LLM or need network access. Mock the client.
 - LLM output is untrusted: parse it, validate it against `schema.py`, retry once on failure, then record a parse failure rather than crashing. Parse failures are an eval metric, so count them.
 - Use temperature 0 for triage so eval runs are repeatable.
 - Configuration comes from `config.yaml` (never hard-code model names or ports outside the localhost check).

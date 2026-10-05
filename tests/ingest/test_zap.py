@@ -4,7 +4,7 @@ from pathlib import Path
 from kotri.ingest.models import Severity, SourceTool
 from kotri.ingest.zap import parse_zap
 
-FIXTURE = Path(__file__).parent / "fixtures" / "zap_sample.json"
+FIXTURE = Path(__file__).parents[1] / "fixtures" / "zap_sample.json"
 
 
 def test_parse_zap_flattens_instances_to_findings():

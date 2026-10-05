@@ -4,7 +4,7 @@ from pathlib import Path
 from kotri.ingest.models import Severity, SourceTool
 from kotri.ingest.semgrep import parse_semgrep
 
-FIXTURE = Path(__file__).parent / "fixtures" / "semgrep_sample.json"
+FIXTURE = Path(__file__).parents[1] / "fixtures" / "semgrep_sample.json"
 
 
 def test_parse_semgrep_returns_one_finding_per_result():

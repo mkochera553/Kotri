@@ -12,7 +12,7 @@ from kotri.llm.schema import (
     parse_triage_output,
 )
 
-FIXTURE = Path(__file__).parent / "fixtures" / "triage_valid.json"
+FIXTURE = Path(__file__).parents[1] / "fixtures" / "triage_valid.json"
 
 
 def test_parse_valid_output() -> None:

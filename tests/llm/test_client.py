@@ -4,6 +4,7 @@ import json
 import logging
 import urllib.error
 import urllib.request
+from collections.abc import Callable
 from email.message import Message
 from pathlib import Path
 from typing import Any
@@ -11,7 +12,7 @@ from urllib.response import addinfourl
 
 import pytest
 
-from kotri.ingest.models import Finding, Severity, SourceTool
+from kotri.ingest.models import Finding
 from kotri.llm.client import (
     DEFAULT_MAX_TOKENS,
     LLMClient,
@@ -21,7 +22,7 @@ from kotri.llm.client import (
     validate_base_url,
 )
 
-FIXTURES = Path(__file__).parent / "fixtures"
+FIXTURES = Path(__file__).parents[1] / "fixtures"
 CHAT_BODY = (FIXTURES / "chat_completion.json").read_bytes()
 VALID_REPLY = (FIXTURES / "triage_valid.json").read_text(encoding="utf-8")
 BASE_URL = "http://127.0.0.1:11434/v1"
@@ -57,17 +58,6 @@ def _client(script: list[bytes | Exception], **kwargs: Any) -> tuple[LLMClient, 
     opener = FakeOpener(script)
     client = LLMClient(BASE_URL, "test-model", opener=opener, sleep=lambda _: None, **kwargs)
     return client, opener
-
-
-def _finding() -> Finding:
-    return Finding(
-        id="abc123",
-        source_tool=SourceTool.SEMGREP,
-        rule="jwt-hardcode",
-        location="lib/insecurity.ts:54",
-        severity=Severity.HIGH,
-        raw_message="A hardcoded JWT secret was found.",
-    )
 
 
 def _scripted_chat(client: LLMClient, replies: list[str]) -> list[list[dict[str, str]]]:
@@ -321,11 +311,11 @@ def test_from_config_still_enforces_the_loopback_check() -> None:
 # --- triage: parse retry and metrics ----------------------------------------
 
 
-def test_triage_success_on_first_try() -> None:
+def test_triage_success_on_first_try(make_finding: Callable[..., Finding]) -> None:
     client, _ = _client([])
     calls = _scripted_chat(client, [VALID_REPLY])
 
-    outcome = client.triage(_finding())
+    outcome = client.triage(make_finding())
 
     assert outcome.result is not None and not outcome.parse_failed
     assert outcome.attempts == 1
@@ -334,12 +324,12 @@ def test_triage_success_on_first_try() -> None:
     assert (client.stats.calls, client.stats.retries, client.stats.failures) == (1, 0, 0)
 
 
-def test_triage_retries_once_on_parse_failure_and_recovers(caplog: pytest.LogCaptureFixture) -> None:
+def test_triage_retries_once_on_parse_failure_and_recovers(caplog: pytest.LogCaptureFixture, make_finding: Callable[..., Finding]) -> None:
     client, _ = _client([])
     calls = _scripted_chat(client, ["I think it's bad.", VALID_REPLY])
 
     with caplog.at_level(logging.WARNING, logger="kotri.llm.client"):
-        outcome = client.triage(_finding())
+        outcome = client.triage(make_finding())
 
     assert outcome.result is not None
     assert outcome.attempts == 2
@@ -349,11 +339,11 @@ def test_triage_retries_once_on_parse_failure_and_recovers(caplog: pytest.LogCap
     assert "retrying once" in caplog.text
 
 
-def test_triage_records_parse_failure_after_second_bad_reply() -> None:
+def test_triage_records_parse_failure_after_second_bad_reply(make_finding: Callable[..., Finding]) -> None:
     client, _ = _client([])
     calls = _scripted_chat(client, ["nope", "still nope"])
 
-    outcome = client.triage(_finding())  # must not raise
+    outcome = client.triage(make_finding())  # must not raise
 
     assert outcome.result is None and outcome.parse_failed
     assert outcome.attempts == 2
@@ -369,13 +359,13 @@ def test_parse_stats_rates_are_zero_before_any_call() -> None:
     assert stats.retry_rate == 0.0 and stats.failure_rate == 0.0  # no ZeroDivisionError
 
 
-def test_parse_stats_rates_and_summary_log(caplog: pytest.LogCaptureFixture) -> None:
+def test_parse_stats_rates_and_summary_log(caplog: pytest.LogCaptureFixture, make_finding: Callable[..., Finding]) -> None:
     client, _ = _client([])
     _scripted_chat(client, [VALID_REPLY, "bad", VALID_REPLY, "bad", "bad"])
 
-    client.triage(_finding())  # ok
-    client.triage(_finding())  # retried, recovered
-    client.triage(_finding())  # retried, failed
+    client.triage(make_finding())  # ok
+    client.triage(make_finding())  # retried, recovered
+    client.triage(make_finding())  # retried, failed
 
     assert client.stats.retry_rate == pytest.approx(2 / 3)
     assert client.stats.failure_rate == pytest.approx(1 / 3)
@@ -384,17 +374,17 @@ def test_parse_stats_rates_and_summary_log(caplog: pytest.LogCaptureFixture) -> 
     assert "3 calls" in caplog.text and "2 retried" in caplog.text
 
 
-def test_triage_propagates_transport_errors() -> None:
+def test_triage_propagates_transport_errors(make_finding: Callable[..., Finding]) -> None:
     client, _ = _client([TimeoutError()] * 3)
     with pytest.raises(LLMError):
-        client.triage(_finding())
+        client.triage(make_finding())
 
 
-def test_transport_error_is_counted_separately_from_parse_stats() -> None:
+def test_transport_error_is_counted_separately_from_parse_stats(make_finding: Callable[..., Finding]) -> None:
     client, _ = _client([TimeoutError()] * 3)
 
     with pytest.raises(LLMError):
-        client.triage(_finding())
+        client.triage(make_finding())
 
     assert client.stats.transport_errors == 1
     assert (client.stats.calls, client.stats.retries) == (0, 0)
@@ -402,7 +392,7 @@ def test_transport_error_is_counted_separately_from_parse_stats() -> None:
     assert client.stats.failure_rate == 0.0  # no denominator inflation
 
 
-def test_transport_error_on_retry_leaves_parse_counters_reconciled() -> None:
+def test_transport_error_on_retry_leaves_parse_counters_reconciled(make_finding: Callable[..., Finding]) -> None:
     client, _ = _client([])
 
     def fake_chat(messages: list[dict[str, str]]) -> str:
@@ -413,19 +403,19 @@ def test_transport_error_on_retry_leaves_parse_counters_reconciled() -> None:
     client.chat = fake_chat  # type: ignore[method-assign]
 
     with pytest.raises(LLMError):
-        client.triage(_finding())
+        client.triage(make_finding())
 
     stats = client.stats
     assert stats.transport_errors == 1
     assert (stats.calls, stats.retries, stats.recovered, stats.failures) == (0, 0, 0, 0)
 
 
-def test_parse_stats_invariants_hold_across_mixed_outcomes() -> None:
+def test_parse_stats_invariants_hold_across_mixed_outcomes(make_finding: Callable[..., Finding]) -> None:
     client, _ = _client([])
     _scripted_chat(client, [VALID_REPLY, "bad", VALID_REPLY, "bad", "bad"])
 
     for _ in range(3):
-        client.triage(_finding())
+        client.triage(make_finding())
 
     s = client.stats
     assert s.retries == s.recovered + s.failures

@@ -15,3 +15,8 @@ dev = ["pytest"]
 
 [tool.setuptools.packages.find]
 where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+# importlib mode lets test files in different directories share a basename
+addopts = "--import-mode=importlib"
