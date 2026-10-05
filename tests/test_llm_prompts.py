@@ -22,7 +22,7 @@ def _finding(raw_message: str = "A hardcoded JWT secret was found.") -> Finding:
     )
 
 
-def test_build_messages_includes_finding_fields():
+def test_build_messages_includes_finding_fields() -> None:
     system, user = build_messages(_finding())
 
     assert system["role"] == "system"
@@ -32,7 +32,7 @@ def test_build_messages_includes_finding_fields():
         assert expected in user["content"]
 
 
-def test_build_messages_tolerates_braces_in_scanner_text():
+def test_build_messages_tolerates_braces_in_scanner_text() -> None:
     messages = build_messages(_finding('payload {"a": {0}} {x}'))
     assert '{"a": {0}} {x}' in messages[1]["content"]
 
@@ -97,7 +97,20 @@ def test_truncate_respects_limit_exactly() -> None:
     assert len(truncate("a" * 100, 40)) == 40
 
 
-def test_build_retry_messages_appends_bad_reply_and_error():
+def test_build_retry_messages_truncates_long_errors() -> None:
+    retry = build_retry_messages(build_messages(_finding()), "oops", "e" * 5000)
+
+    feedback = retry[-1]["content"]
+    assert "e" * 500 in feedback and "e" * 501 not in feedback
+    assert feedback.endswith("Reply again with only the JSON object described above.")
+
+
+def test_build_retry_messages_keeps_the_bad_reply_verbatim() -> None:
+    bad = "```json\n{broken\n```"
+    assert build_retry_messages(build_messages(_finding()), bad, "x")[-2]["content"] == bad
+
+
+def test_build_retry_messages_appends_bad_reply_and_error() -> None:
     original = build_messages(_finding())
     retry = build_retry_messages(original, "oops", "missing verdict")
 

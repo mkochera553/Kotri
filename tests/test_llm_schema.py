@@ -15,7 +15,7 @@ from kotri.llm.schema import (
 FIXTURE = Path(__file__).parent / "fixtures" / "triage_valid.json"
 
 
-def test_parse_valid_output():
+def test_parse_valid_output() -> None:
     result = parse_triage_output(FIXTURE.read_text(encoding="utf-8"))
 
     assert result.verdict == Verdict.LIKELY_TRUE_POSITIVE
@@ -24,12 +24,12 @@ def test_parse_valid_output():
     assert result.suggested_fix.startswith("Load the secret")
 
 
-def test_parse_strips_markdown_fence():
+def test_parse_strips_markdown_fence() -> None:
     text = "```json\n" + FIXTURE.read_text(encoding="utf-8") + "\n```"
     assert parse_triage_output(text).verdict == Verdict.LIKELY_TRUE_POSITIVE
 
 
-def test_parse_extracts_object_from_surrounding_prose():
+def test_parse_extracts_object_from_surrounding_prose() -> None:
     text = "Sure! Here is my answer: " + FIXTURE.read_text(encoding="utf-8") + " Hope it helps."
     assert parse_triage_output(text).adjusted_severity == Severity.HIGH
 
@@ -49,7 +49,7 @@ def test_parse_skips_stray_braces_in_prose() -> None:
     assert parse_triage_output(text).adjusted_severity == Severity.HIGH
 
 
-def test_parse_normalizes_enum_casing_and_spacing():
+def test_parse_normalizes_enum_casing_and_spacing() -> None:
     text = (
         '{"verdict": "Likely False Positive", "adjusted_severity": "LOW",'
         ' "exploitability_rationale": "Test file only.", "suggested_fix": ""}'
@@ -61,7 +61,7 @@ def test_parse_normalizes_enum_casing_and_spacing():
     assert result.suggested_fix == ""
 
 
-def test_parse_ignores_extra_keys():
+def test_parse_ignores_extra_keys() -> None:
     text = (
         '{"verdict": "needs_review", "adjusted_severity": "info",'
         ' "exploitability_rationale": "Unclear.", "suggested_fix": "", "confidence": 0.4}'

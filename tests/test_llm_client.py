@@ -6,6 +6,7 @@ import urllib.error
 import urllib.request
 from email.message import Message
 from pathlib import Path
+from typing import Any
 from urllib.response import addinfourl
 
 import pytest
@@ -34,12 +35,12 @@ class FakeResponse(io.BytesIO):
 class FakeOpener:
     """Plays back a script of response bodies / exceptions; records requests."""
 
-    def __init__(self, script: list) -> None:
+    def __init__(self, script: list[bytes | Exception]) -> None:
         self.script = list(script)
-        self.requests: list = []
-        self.timeouts: list = []
+        self.requests: list[urllib.request.Request] = []
+        self.timeouts: list[float | None] = []
 
-    def open(self, request, timeout=None):
+    def open(self, request: urllib.request.Request, timeout: float | None = None) -> FakeResponse:
         self.requests.append(request)
         self.timeouts.append(timeout)
         step = self.script.pop(0)
@@ -52,7 +53,7 @@ def _http_error(code: int) -> urllib.error.HTTPError:
     return urllib.error.HTTPError(BASE_URL, code, "err", {}, io.BytesIO(b""))
 
 
-def _client(script: list, **kwargs) -> tuple[LLMClient, FakeOpener]:
+def _client(script: list[bytes | Exception], **kwargs: Any) -> tuple[LLMClient, FakeOpener]:
     opener = FakeOpener(script)
     client = LLMClient(BASE_URL, "test-model", opener=opener, sleep=lambda _: None, **kwargs)
     return client, opener
@@ -69,11 +70,11 @@ def _finding() -> Finding:
     )
 
 
-def _scripted_chat(client: LLMClient, replies: list[str]) -> list:
+def _scripted_chat(client: LLMClient, replies: list[str]) -> list[list[dict[str, str]]]:
     """Replace client.chat so triage tests never touch transport."""
-    calls: list = []
+    calls: list[list[dict[str, str]]] = []
 
-    def fake_chat(messages):
+    def fake_chat(messages: list[dict[str, str]]) -> str:
         calls.append(messages)
         return replies.pop(0)
 
@@ -272,7 +273,18 @@ def test_client_uses_hardened_opener_by_default() -> None:
 
 @pytest.mark.parametrize(
     "body",
-    [b"not json", b"{}", b'{"choices": []}', b'{"choices": [{"message": {"content": null}}]}'],
+    [
+        b"not json",
+        b"\xff\xfe",  # not valid UTF-8
+        b"[]",
+        b"{}",
+        b'{"choices": []}',
+        b'{"choices": [{}]}',
+        b'{"choices": [{"message": {}}]}',
+        b'{"choices": [{"message": {"content": null}}]}',
+        b'{"choices": [{"message": {"content": 123}}]}',  # content must be a string
+        b'{"choices": [{"message": {"content": ["{}"]}}]}',
+    ],
 )
 def test_chat_rejects_malformed_response(body: bytes) -> None:
     client, _ = _client([body])
@@ -291,6 +303,21 @@ def test_from_config_reads_llm_section() -> None:
     assert configured.max_tokens == 64
 
 
+def test_from_config_applies_documented_defaults() -> None:
+    client = LLMClient.from_config({"base_url": BASE_URL}, "a")
+    assert (client.timeout, client.max_retries, client.temperature) == (120.0, 2, 0.0)
+
+
+def test_from_config_requires_base_url() -> None:
+    with pytest.raises(KeyError):
+        LLMClient.from_config({"timeout_seconds": 30}, "a")
+
+
+def test_from_config_still_enforces_the_loopback_check() -> None:
+    with pytest.raises(ValueError):
+        LLMClient.from_config({"base_url": "http://example.com/v1"}, "a")
+
+
 # --- triage: parse retry and metrics ----------------------------------------
 
 
@@ -307,7 +334,7 @@ def test_triage_success_on_first_try() -> None:
     assert (client.stats.calls, client.stats.retries, client.stats.failures) == (1, 0, 0)
 
 
-def test_triage_retries_once_on_parse_failure_and_recovers(caplog) -> None:
+def test_triage_retries_once_on_parse_failure_and_recovers(caplog: pytest.LogCaptureFixture) -> None:
     client, _ = _client([])
     calls = _scripted_chat(client, ["I think it's bad.", VALID_REPLY])
 
@@ -335,7 +362,14 @@ def test_triage_records_parse_failure_after_second_bad_reply() -> None:
     assert (client.stats.retries, client.stats.recovered, client.stats.failures) == (1, 0, 1)
 
 
-def test_parse_stats_rates_and_summary_log(caplog) -> None:
+def test_parse_stats_rates_are_zero_before_any_call() -> None:
+    stats = LLMClient(BASE_URL, "m").stats
+
+    assert (stats.calls, stats.transport_errors) == (0, 0)
+    assert stats.retry_rate == 0.0 and stats.failure_rate == 0.0  # no ZeroDivisionError
+
+
+def test_parse_stats_rates_and_summary_log(caplog: pytest.LogCaptureFixture) -> None:
     client, _ = _client([])
     _scripted_chat(client, [VALID_REPLY, "bad", VALID_REPLY, "bad", "bad"])
 
@@ -371,7 +405,7 @@ def test_transport_error_is_counted_separately_from_parse_stats() -> None:
 def test_transport_error_on_retry_leaves_parse_counters_reconciled() -> None:
     client, _ = _client([])
 
-    def fake_chat(messages):
+    def fake_chat(messages: list[dict[str, str]]) -> str:
         if len(messages) == 2:
             return "not json"  # first attempt: unparseable
         raise LLMError("runtime went away")  # retry attempt: transport failure
@@ -388,12 +422,8 @@ def test_transport_error_on_retry_leaves_parse_counters_reconciled() -> None:
 
 def test_parse_stats_invariants_hold_across_mixed_outcomes() -> None:
     client, _ = _client([])
-    replies = [VALID_REPLY, "bad", VALID_REPLY, "bad", "bad"]
+    _scripted_chat(client, [VALID_REPLY, "bad", VALID_REPLY, "bad", "bad"])
 
-    def fake_chat(messages):
-        return replies.pop(0)
-
-    client.chat = fake_chat  # type: ignore[method-assign]
     for _ in range(3):
         client.triage(_finding())
 
