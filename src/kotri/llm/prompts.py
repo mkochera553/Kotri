@@ -51,6 +51,7 @@ _MAX_ERROR_CHARS = 500
 # Local runtimes default to a small context window and silently drop the start of an
 # oversized prompt, which is where the instructions are. Keep the finding text bounded.
 MAX_MESSAGE_CHARS = 4000
+MAX_RULE_CHARS = 200
 MAX_LOCATION_CHARS = 500
 _TRUNCATION_MARKER = "... [truncated]"
 
@@ -60,6 +61,16 @@ def truncate(text: str, limit: int) -> str:
     if len(text) <= limit:
         return text
     return text[: limit - len(_TRUNCATION_MARKER)] + _TRUNCATION_MARKER
+
+
+def single_line(text: str, limit: int) -> str:
+    """Collapse all whitespace runs, newlines included, to one space, then truncate.
+
+    Rule and location sit on one line of the prompt. Scanner-controlled text there
+    (a ZAP location is a URL the app under test can shape) must not be able to start
+    a new line and fake a field such as "Scanner message:".
+    """
+    return truncate(" ".join(text.split()), limit)
 
 
 def delimiters(text: str) -> tuple[str, str]:
@@ -80,8 +91,8 @@ def build_messages(finding: Finding) -> list[Message]:
     open_delim, close_delim = delimiters(raw_message)
     user = _FINDING_TEMPLATE.format(
         source_tool=finding.source_tool.value,
-        rule=finding.rule,
-        location=truncate(finding.location, MAX_LOCATION_CHARS),
+        rule=single_line(finding.rule, MAX_RULE_CHARS),
+        location=single_line(finding.location, MAX_LOCATION_CHARS),
         severity=finding.severity.value,
         raw_message=raw_message,
         open_delim=open_delim,
