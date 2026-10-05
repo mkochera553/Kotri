@@ -79,13 +79,13 @@ class TriageResult(BaseModel):
 _DECODER = json.JSONDecoder()
 
 
-def _extract_json_text(text: str) -> str:
-    """Return the first complete JSON object in text, ignoring fences and prose.
+def _json_objects(text: str) -> list[str]:
+    """Every top-level JSON object in text, in order, skipping fences and prose.
 
-    Prose before or after the object (including stray braces in it) is skipped.
-    If no object decodes, the stripped text is returned so validation reports why.
+    Stray braces in prose are skipped, and objects nested inside a decoded object are
+    not returned separately.
     """
-    text = text.strip()
+    objects: list[str] = []
     start = text.find("{")
     while start != -1:
         try:
@@ -93,13 +93,27 @@ def _extract_json_text(text: str) -> str:
         except ValueError:
             start = text.find("{", start + 1)
         else:
-            return text[start:end]
-    return text
+            objects.append(text[start:end])
+            start = text.find("{", end)
+    return objects
 
 
 def parse_triage_output(text: str) -> TriageResult:
-    """Parse and validate raw model output, raising TriageParseError on any failure."""
-    try:
-        return TriageResult.model_validate_json(_extract_json_text(text))
-    except ValidationError as exc:
-        raise TriageParseError(str(exc)) from exc
+    """Parse and validate raw model output, raising TriageParseError on any failure.
+
+    If the reply holds several JSON objects (a draft in a reasoning model's think
+    block, an example before the answer, or `{}` in prose), the last one that
+    validates wins, since the final answer comes last. If none validates, the error
+    is for the last object, or for the whole text when no object decodes.
+    """
+    text = text.strip()
+    candidates = _json_objects(text) or [text]
+
+    last_error: ValidationError | None = None
+    for candidate in reversed(candidates):
+        try:
+            return TriageResult.model_validate_json(candidate)
+        except ValidationError as exc:
+            if last_error is None:  # the first failure seen is the last candidate's
+                last_error = exc
+    raise TriageParseError(str(last_error)) from last_error

@@ -49,6 +49,56 @@ def test_parse_skips_stray_braces_in_prose() -> None:
     assert parse_triage_output(text).adjusted_severity == Severity.HIGH
 
 
+def _answer(verdict: str, severity: str, rationale: str) -> str:
+    return json.dumps(
+        {
+            "verdict": verdict,
+            "adjusted_severity": severity,
+            "exploitability_rationale": rationale,
+            "suggested_fix": "",
+        }
+    )
+
+
+def test_parse_prefers_the_final_answer_over_a_draft_in_a_think_block() -> None:
+    draft = _answer("likely_false_positive", "low", "draft")
+    final = _answer("likely_true_positive", "high", "final")
+
+    result = parse_triage_output(f"<think>maybe {draft}</think>\n{final}")
+
+    assert result.verdict == Verdict.LIKELY_TRUE_POSITIVE
+    assert result.exploitability_rationale == "final"
+
+
+def test_parse_takes_the_last_valid_object_when_there_are_several() -> None:
+    first = _answer("likely_false_positive", "low", "first")
+    last = _answer("likely_true_positive", "high", "last")
+
+    result = parse_triage_output(f"Example: {first}\nAnswer: {last}")
+
+    assert result.exploitability_rationale == "last"
+
+
+def test_parse_skips_empty_object_in_prose_before_the_answer() -> None:
+    text = "Use {} for empty. " + _answer("needs_review", "low", "ok")
+    assert parse_triage_output(text).verdict == Verdict.NEEDS_REVIEW
+
+
+def test_parse_falls_back_to_an_earlier_valid_object_if_a_later_one_is_invalid() -> None:
+    valid = _answer("needs_review", "low", "valid")
+    assert parse_triage_output(f'{valid} then {{"verdict": "x"}}').exploitability_rationale == "valid"
+
+
+def test_parse_error_describes_the_last_object_when_none_validate() -> None:
+    text = '{"verdict": "needs_review"} {"adjusted_severity": "low"}'
+
+    with pytest.raises(TriageParseError) as excinfo:
+        parse_triage_output(text)
+
+    assert "verdict" in str(excinfo.value)  # the last object is missing verdict, not severity
+    assert "adjusted_severity\n  Field required" not in str(excinfo.value)
+
+
 def test_parse_normalizes_enum_casing_and_spacing() -> None:
     text = (
         '{"verdict": "Likely False Positive", "adjusted_severity": "LOW",'
