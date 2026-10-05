@@ -1,9 +1,16 @@
+import json
 from pathlib import Path
 
 import pytest
 
 from kotri.ingest.models import Severity
-from kotri.llm.schema import TriageParseError, Verdict, parse_triage_output
+from kotri.llm.schema import (
+    MAX_FIX_CHARS,
+    MAX_RATIONALE_CHARS,
+    TriageParseError,
+    Verdict,
+    parse_triage_output,
+)
 
 FIXTURE = Path(__file__).parent / "fixtures" / "triage_valid.json"
 
@@ -60,6 +67,65 @@ def test_parse_ignores_extra_keys():
         ' "exploitability_rationale": "Unclear.", "suggested_fix": "", "confidence": 0.4}'
     )
     assert parse_triage_output(text).verdict == Verdict.NEEDS_REVIEW
+
+
+def _reply(**overrides: object) -> str:
+    fields = {
+        "verdict": "needs_review",
+        "adjusted_severity": "low",
+        "exploitability_rationale": "Unclear.",
+        "suggested_fix": "",
+    }
+    fields.update(overrides)
+    return json.dumps({k: v for k, v in fields.items() if v is not _OMIT})
+
+
+_OMIT = object()
+
+
+def test_missing_suggested_fix_defaults_to_empty() -> None:
+    assert parse_triage_output(_reply(suggested_fix=_OMIT)).suggested_fix == ""
+
+
+def test_null_suggested_fix_becomes_empty() -> None:
+    assert parse_triage_output(_reply(suggested_fix=None)).suggested_fix == ""
+
+
+def test_overlong_rationale_is_truncated_not_rejected() -> None:
+    result = parse_triage_output(_reply(exploitability_rationale="word " * 1000))
+
+    assert 0 < len(result.exploitability_rationale) <= MAX_RATIONALE_CHARS
+
+
+def test_overlong_fix_is_truncated_not_rejected() -> None:
+    result = parse_triage_output(_reply(suggested_fix="x" * (MAX_FIX_CHARS * 2)))
+    assert len(result.suggested_fix) == MAX_FIX_CHARS
+
+
+def test_text_at_the_limit_is_untouched() -> None:
+    text = "y" * MAX_RATIONALE_CHARS
+    assert parse_triage_output(_reply(exploitability_rationale=text)).exploitability_rationale == text
+
+
+@pytest.mark.parametrize("severity", ["informational", "Informational", "INFORMATIONAL"])
+def test_informational_maps_to_info(severity: str) -> None:
+    assert parse_triage_output(_reply(adjusted_severity=severity)).adjusted_severity == Severity.INFO
+
+
+@pytest.mark.parametrize(
+    "overrides",
+    [
+        {"exploitability_rationale": _OMIT},  # still required
+        {"exploitability_rationale": None},
+        {"exploitability_rationale": "  "},
+        {"verdict": _OMIT},
+        {"adjusted_severity": _OMIT},
+        {"suggested_fix": 5},  # wrong type is still an error, not coerced
+    ],
+)
+def test_loosening_does_not_accept_substantive_errors(overrides: dict) -> None:
+    with pytest.raises(TriageParseError):
+        parse_triage_output(_reply(**overrides))
 
 
 @pytest.mark.parametrize(
