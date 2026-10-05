@@ -6,6 +6,7 @@ from typing import Any
 import pytest
 
 from kotri.ingest.models import Severity, SourceTool
+from kotri.ingest.text import MAX_DETAIL_CHARS
 from kotri.ingest.zap import parse_zap
 
 FIXTURE = Path(__file__).parents[1] / "fixtures" / "zap_sample.json"
@@ -184,6 +185,95 @@ def test_parse_zap_tolerates_a_non_string_param(tmp_path: Path) -> None:
     alert = _alert(instances=[{"uri": "http://h/", "param": None}, {"uri": "http://h/", "param": 4}])
     findings = parse_zap(_write(tmp_path, _report(alert)))
     assert [f.location for f in findings] == ["http://h/", "http://h/#4"]
+
+
+def _messages(tmp_path: Path, alert: dict[str, Any]) -> list[str]:
+    return [f.raw_message for f in parse_zap(_write(tmp_path, _report(alert)))]
+
+
+def test_parse_zap_message_includes_instance_evidence() -> None:
+    redirect = [f for f in parse_zap(FIXTURE) if f.rule == "Off-site Redirect"]
+    with_evidence = next(f for f in redirect if f.location.endswith("#to"))
+
+    assert with_evidence.raw_message.startswith("The response contains a redirect")
+    assert "Method: GET" in with_evidence.raw_message
+    assert "CWE: CWE-601" in with_evidence.raw_message
+    assert "ZAP confidence: medium" in with_evidence.raw_message
+    assert "Other info: The 302 response contained user input" in with_evidence.raw_message
+
+
+def test_parse_zap_keeps_attack_and_evidence_verbatim_including_markup() -> None:
+    finding = next(f for f in parse_zap(FIXTURE) if f.location.endswith("#to"))
+
+    assert "Attack: https://evil.example/<script>" in finding.raw_message
+    assert "Evidence: Location: https://evil.example/<script>" in finding.raw_message
+
+
+def test_parse_zap_instance_without_evidence_gets_no_empty_labels() -> None:
+    finding = next(f for f in parse_zap(FIXTURE) if f.location.endswith("#redirectUrl"))
+
+    for label in ("Attack:", "Evidence:", "Other info:"):
+        assert label not in finding.raw_message
+    assert "Method: GET" in finding.raw_message
+
+
+def test_parse_zap_alert_level_otherinfo_is_html_stripped_and_used_as_fallback() -> None:
+    finding = next(f for f in parse_zap(FIXTURE) if f.rule == "Missing Anti-clickjacking Header")
+
+    assert "Other info: Alert level note." in finding.raw_message
+    assert "<p>" not in finding.raw_message
+
+
+def test_parse_zap_instance_otherinfo_wins_over_alert_otherinfo(tmp_path: Path) -> None:
+    alert = _alert(otherinfo="<p>alert</p>", instances=[{"uri": "http://h/", "otherinfo": "instance"}])
+    (message,) = _messages(tmp_path, alert)
+
+    assert "Other info: instance" in message
+    assert "alert" not in message.replace("Alert A", "")
+
+
+@pytest.mark.parametrize("cweid", ["0", "-1", "", "abc", "²", None, 0, [1]])
+def test_parse_zap_omits_the_cwe_line_when_zap_reports_none(tmp_path: Path, cweid: Any) -> None:
+    (message,) = _messages(tmp_path, _alert(cweid=cweid))
+    assert "CWE" not in message
+
+
+def test_parse_zap_formats_numeric_cweid(tmp_path: Path) -> None:
+    assert "CWE: CWE-79" in _messages(tmp_path, _alert(cweid=79))[0]
+    assert "CWE: CWE-79" in _messages(tmp_path, _alert(cweid=" 79 "))[0]
+
+
+@pytest.mark.parametrize(
+    ("confidence", "label"),
+    [("0", "false positive"), ("1", "low"), ("2", "medium"), ("3", "high"), (4, "confirmed")],
+)
+def test_parse_zap_confidence_labels(tmp_path: Path, confidence: Any, label: str) -> None:
+    assert f"ZAP confidence: {label}" in _messages(tmp_path, _alert(confidence=confidence))[0]
+
+
+@pytest.mark.parametrize("confidence", ["9", None, "high", []])
+def test_parse_zap_omits_unknown_confidence(tmp_path: Path, confidence: Any) -> None:
+    assert "confidence" not in _messages(tmp_path, _alert(confidence=confidence))[0]
+
+
+def test_parse_zap_ignores_non_string_detail_fields(tmp_path: Path) -> None:
+    instance = {"uri": "http://h/", "method": 5, "attack": ["a"], "evidence": None, "otherinfo": {}}
+    assert _messages(tmp_path, _alert(instances=[instance])) == ["d"]
+
+
+def test_parse_zap_clips_long_evidence(tmp_path: Path) -> None:
+    instance = {"uri": "http://h/", "evidence": "e" * 50_000}
+    (message,) = _messages(tmp_path, _alert(instances=[instance]))
+
+    assert len(message) < MAX_DETAIL_CHARS + 100
+    assert message.endswith("... [truncated]")
+
+
+def test_parse_zap_details_do_not_change_the_finding_id(tmp_path: Path) -> None:
+    bare = parse_zap(_write(tmp_path, _report(_alert(instances=[{"uri": "http://h/"}]))))[0]
+    rich = parse_zap(_write(tmp_path, _report(_alert(instances=[{"uri": "http://h/", "evidence": "x"}]))))[0]
+
+    assert bare.id == rich.id
 
 
 @pytest.mark.parametrize("sites", [None, {}, "x", [None, "x", 5]])
