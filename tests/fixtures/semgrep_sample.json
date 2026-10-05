@@ -1,0 +1,47 @@
+{
+  "version": "1.99.0",
+  "results": [
+    {
+      "check_id": "javascript.lang.security.audit.hardcoded-hmac-key.hardcoded-hmac-key",
+      "path": "lib/insecurity.ts",
+      "start": { "line": 42, "col": 1, "offset": 900 },
+      "end": { "line": 42, "col": 40, "offset": 939 },
+      "extra": {
+        "message": "A hardcoded HMAC key was found. Store it in a secret manager instead.",
+        "severity": "WARNING"
+      }
+    },
+    {
+      "check_id": "javascript.jsonwebtoken.security.jwt-hardcode.hardcoded-jwt-secret",
+      "path": "lib/insecurity.ts",
+      "start": { "line": 54, "col": 1, "offset": 1200 },
+      "end": { "line": 54, "col": 50, "offset": 1249 },
+      "extra": {
+        "message": "A hardcoded JWT secret was found. This is a strong indicator of a secret.",
+        "severity": "ERROR"
+      }
+    },
+    {
+      "check_id": "javascript.express.security.audit.express-check-directory-listing.express-check-directory-listing",
+      "path": "server.ts",
+      "start": { "line": 268, "col": 1, "offset": 7000 },
+      "end": { "line": 268, "col": 60, "offset": 7059 },
+      "extra": {
+        "message": "Directory listing is enabled for this route. This could lead to information exposure.",
+        "severity": "INFO"
+      }
+    },
+    {
+      "check_id": "javascript.lang.security.audit.hardcoded-hmac-key.hardcoded-hmac-key",
+      "path": "lib/insecurity.ts",
+      "start": { "line": 42, "col": 1, "offset": 900 },
+      "end": { "line": 42, "col": 40, "offset": 939 },
+      "extra": {
+        "message": "A hardcoded HMAC key was found. Store it in a secret manager instead.",
+        "severity": "WARNING"
+      }
+    }
+  ],
+  "errors": [],
+  "paths": { "scanned": ["lib/insecurity.ts", "server.ts"] }
+}

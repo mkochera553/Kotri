@@ -1,0 +1,65 @@
+{
+  "@programName": "ZAP",
+  "@version": "2.17.0",
+  "@generated": "Mon, 1 Jan 2026 00:00:00",
+  "site": [
+    {
+      "@name": "http://host.docker.internal:3000",
+      "@host": "host.docker.internal",
+      "@port": "3000",
+      "@ssl": "false",
+      "alerts": [
+        {
+          "pluginid": "10038",
+          "alert": "Content Security Policy (CSP) Header Not Set",
+          "name": "Content Security Policy (CSP) Header Not Set",
+          "riskcode": "2",
+          "confidence": "3",
+          "riskdesc": "Medium (High)",
+          "desc": "<p>CSP is an added layer of security that helps detect and mitigate certain types of attacks.</p>",
+          "instances": [
+            { "id": "1", "uri": "http://host.docker.internal:3000/", "method": "GET" },
+            { "id": "2", "uri": "http://host.docker.internal:3000/ftp", "method": "GET" }
+          ],
+          "count": "2",
+          "solution": "<p>Ensure that your web server sets the Content-Security-Policy header.</p>",
+          "cweid": "693",
+          "wascid": "15"
+        },
+        {
+          "pluginid": "10020",
+          "alert": "Missing Anti-clickjacking Header",
+          "name": "Missing Anti-clickjacking Header",
+          "riskcode": "2",
+          "confidence": "2",
+          "riskdesc": "Medium (Medium)",
+          "desc": "<p>The response does not include either Content-Security-Policy with 'frame-ancestors' or X-Frame-Options.</p>",
+          "instances": [
+            { "id": "3", "uri": "http://host.docker.internal:3000/", "method": "GET" }
+          ],
+          "count": "1",
+          "solution": "<p>Add the X-Frame-Options header.</p>",
+          "cweid": "1021",
+          "wascid": "15"
+        },
+        {
+          "pluginid": "40012",
+          "alert": "Off-site Redirect",
+          "name": "Off-site Redirect",
+          "riskcode": "3",
+          "confidence": "2",
+          "riskdesc": "High (Medium)",
+          "desc": "<p>The response contains a redirect to an off-site location based on user-controlled input.</p>",
+          "instances": [
+            { "id": "4", "uri": "http://host.docker.internal:3000/redirect", "method": "GET", "param": "to" },
+            { "id": "5", "uri": "http://host.docker.internal:3000/redirect", "method": "GET", "param": "redirectUrl" }
+          ],
+          "count": "2",
+          "solution": "<p>Validate redirect targets against an allowlist.</p>",
+          "cweid": "601",
+          "wascid": "38"
+        }
+      ]
+    }
+  ]
+}
