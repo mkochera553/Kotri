@@ -31,6 +31,15 @@ class Finding(BaseModel):
 
 
 def make_finding_id(source_tool: SourceTool, rule: str, location: str) -> str:
-    """Deterministic id so re-running a scan yields stable Finding ids."""
-    digest = hashlib.sha256(f"{source_tool.value}:{rule}:{location}".encode("utf-8"))
+    """Deterministic id so re-running a scan yields stable Finding ids.
+
+    Each component is length-prefixed before hashing so that, e.g., a rule
+    ending in ":3000" can't shift into the next field and collide with a
+    different (rule, location) pair.
+    """
+    digest = hashlib.sha256()
+    for part in (source_tool.value, rule, location):
+        encoded = part.encode("utf-8")
+        digest.update(len(encoded).to_bytes(8, "big"))
+        digest.update(encoded)
     return digest.hexdigest()[:16]

@@ -19,6 +19,15 @@ def test_make_finding_id_differs_on_any_component():
     assert make_finding_id(SourceTool.SEMGREP, "rule-a", "file.ts:2") != base
 
 
+def test_make_finding_id_does_not_collide_across_field_boundary():
+    # Naively joining with "tool:rule:location" would make these two equal,
+    # since "a:b" + ":" + "c" == "a" + ":" + "b:c".
+    shifted_rule = make_finding_id(SourceTool.SEMGREP, "a:b", "c")
+    shifted_location = make_finding_id(SourceTool.SEMGREP, "a", "b:c")
+
+    assert shifted_rule != shifted_location
+
+
 def test_finding_rejects_invalid_severity():
     with pytest.raises(ValidationError):
         Finding(
