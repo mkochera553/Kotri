@@ -10,6 +10,7 @@
 /dataSources.local.xml
 
 scans/
+reports/
 config.yaml
 *.iml
 .venv/

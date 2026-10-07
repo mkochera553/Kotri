@@ -27,8 +27,10 @@ src/
       client.py    # OpenAI-compatible client: localhost-only, timeouts, retries
       prompts.py   # triage prompt templates
       schema.py    # Pydantic schema the LLM's JSON output must validate against
+    config.py      # load/validate config.yaml (localhost check included)
     pipeline.py    # normalize -> dedupe -> triage -> collect results
-    report.py      # ranked Markdown report
+    report.py      # ranked Markdown report, sorted by adjusted severity
+    cli.py         # `kotri` / `python -m kotri`: scans in, report out
 eval/
   labels.csv       # hand-labeled findings (ground truth; do not edit without asking)
   run_eval.py      # agreement, parse-failure rate, latency per model
@@ -59,6 +61,7 @@ Put new code in the module that owns that responsibility. Parsers only parse; th
 ```
 pip install -e ".[dev]"     # install with dev dependencies
 python -m pytest            # run tests
+python -m kotri --semgrep scans/semgrep.json --zap scans/zap-baseline.json   # report -> reports/kotri-report.md
 ```
 
 ## Working style
