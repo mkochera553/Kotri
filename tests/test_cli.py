@@ -103,6 +103,41 @@ def test_runtime_failure_exits_1_but_still_writes_the_report(
     assert "connection refused" in output.read_text(encoding="utf-8")
 
 
+def test_output_that_is_a_directory_exits_2_before_triage(
+    fake_client: type[FakeClient], config_path: Path, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    code = cli.main([
+        "--semgrep", str(FIXTURES / "semgrep_sample.json"),
+        "--config", str(config_path),
+        "--output", str(tmp_path),
+    ])
+    assert code == 2
+    assert "is a directory" in capsys.readouterr().err
+    (client,) = fake_client.instances
+    assert client.stats.calls == 0  # no model time was spent
+
+
+def test_unwritable_report_exits_2_not_a_traceback(
+    fake_client: type[FakeClient],
+    config_path: Path,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    def deny(self: Path, *args: Any, **kwargs: Any) -> int:
+        raise PermissionError("locked")
+
+    monkeypatch.setattr(Path, "write_text", deny)
+    code = cli.main([
+        "--semgrep", str(FIXTURES / "semgrep_sample.json"),
+        "--config", str(config_path),
+        "--output", str(tmp_path / "report.md"),
+    ])
+    assert code == 2
+    err = capsys.readouterr().err
+    assert "cannot write report" in err and "locked" in err
+
+
 def test_model_defaults_to_first_in_config_and_can_be_overridden(
     fake_client: type[FakeClient], config_path: Path, tmp_path: Path
 ) -> None:

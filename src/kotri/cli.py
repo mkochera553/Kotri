@@ -32,6 +32,13 @@ def _build_parser() -> argparse.ArgumentParser:
     return parser
 
 
+def _prepare_output(output: Path) -> None:
+    """Create the report's parent directory; raise OSError if it can't be a file path."""
+    if output.is_dir():
+        raise IsADirectoryError(f"--output {output} is a directory, not a file")
+    output.parent.mkdir(parents=True, exist_ok=True)
+
+
 def main(argv: Sequence[str] | None = None) -> int:
     parser = _build_parser()
     args = parser.parse_args(argv)
@@ -42,14 +49,18 @@ def main(argv: Sequence[str] | None = None) -> int:
     try:
         llm_config = load_config(args.config)
         client = LLMClient.from_config(llm_config, args.model or llm_config["models"][0])
+        _prepare_output(args.output)  # fail before the slow triage run, not after
         result = run_pipeline(client, semgrep=args.semgrep, zap=args.zap)
     except (ConfigError, OSError, ValueError) as exc:
         print(f"kotri: {exc}", file=sys.stderr)
         return 2
     client.log_parse_stats()
 
-    args.output.parent.mkdir(parents=True, exist_ok=True)
-    args.output.write_text(render_report(result), encoding="utf-8")
+    try:
+        args.output.write_text(render_report(result), encoding="utf-8")
+    except OSError as exc:
+        print(f"kotri: cannot write report {args.output}: {exc}", file=sys.stderr)
+        return 2
     print(f"Wrote {args.output} ({len(result.items)} findings)")
     return 1 if result.incomplete else 0
 
