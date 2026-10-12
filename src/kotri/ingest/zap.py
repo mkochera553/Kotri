@@ -114,7 +114,7 @@ def parse_zap(path: Path) -> list[Finding]:
                 if not isinstance(rule, str):
                     raise TypeError("alert name must be a string")
                 severity = _normalize_severity(alert["riskcode"], rule)
-                description = _strip_html(alert.get("desc", ""))
+                description = _html_text(alert.get("desc"))
             except (KeyError, TypeError) as exc:
                 logger.warning("skipping malformed ZAP alert: %s", exc)
                 continue

@@ -156,8 +156,6 @@ def test_parse_zap_unrecognized_riskcode_is_neutral_and_logged(
     [
         _alert(alert=None),
         _alert(alert=["x"]),
-        _alert(desc=None),  # re.sub on a non-string
-        _alert(desc=5),
         "not an object",
         None,
     ],
@@ -170,6 +168,21 @@ def test_parse_zap_skips_wrong_typed_alerts_and_keeps_the_rest(
 
     assert [f.rule for f in findings] == ["Alert A"]
     assert caplog.records
+
+
+@pytest.mark.parametrize("desc", [None, 5, ["x"], {}])
+def test_parse_zap_keeps_instances_when_desc_is_not_a_string(tmp_path: Path, desc: Any) -> None:
+    findings = parse_zap(_write(tmp_path, _report(_alert(desc=desc))))
+    (finding,) = findings
+    assert finding.rule == "Alert A"
+    assert finding.raw_message == ""  # no description; the finding itself is not lost
+
+
+def test_parse_zap_keeps_instances_when_desc_is_missing(tmp_path: Path) -> None:
+    alert = _alert(instances=[{"uri": "http://h/", "evidence": "<script>x</script>"}])
+    del alert["desc"]
+    (finding,) = parse_zap(_write(tmp_path, _report(alert)))
+    assert finding.raw_message == "Evidence: <script>x</script>"
 
 
 @pytest.mark.parametrize(
