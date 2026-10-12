@@ -286,6 +286,16 @@ def test_parse_zap_tolerates_non_list_alerts(tmp_path: Path, alerts: Any) -> Non
     assert parse_zap(_write(tmp_path, {"site": [{"alerts": alerts}]})) == []
 
 
+def test_parse_zap_rejects_an_object_with_no_site_key(tmp_path: Path) -> None:
+    # e.g. a Semgrep report passed as --zap
+    with pytest.raises(ValueError, match="'site'"):
+        parse_zap(_write(tmp_path, {"results": []}))
+
+
+def test_parse_zap_empty_site_list_is_an_empty_scan(tmp_path: Path) -> None:
+    assert parse_zap(_write(tmp_path, {"site": []})) == []
+
+
 @pytest.mark.parametrize("report", [[], "text", 5, None])
 def test_parse_zap_rejects_a_report_that_is_not_an_object(tmp_path: Path, report: Any) -> None:
     with pytest.raises(ValueError, match="JSON object"):

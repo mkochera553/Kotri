@@ -24,6 +24,16 @@ def test_load_report_rejects_non_object_top_level(tmp_path: Path, payload: str) 
     assert str(path) in str(excinfo.value)
 
 
+def test_load_report_required_key(tmp_path: Path) -> None:
+    path = tmp_path / "r.json"
+    path.write_text(json.dumps({"results": []}), encoding="utf-8")
+    assert load_report(path, required_key="results") == {"results": []}
+
+    with pytest.raises(ValueError, match="'site'") as excinfo:
+        load_report(path, required_key="site")
+    assert str(path) in str(excinfo.value)
+
+
 def test_load_report_propagates_invalid_json(tmp_path: Path) -> None:
     path = tmp_path / "r.json"
     path.write_text("{not json", encoding="utf-8")

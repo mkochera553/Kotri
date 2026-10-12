@@ -209,5 +209,11 @@ def test_parse_semgrep_details_do_not_change_the_finding_id(tmp_path: Path) -> N
     assert plain.raw_message != rich.raw_message
 
 
-def test_parse_semgrep_missing_results_key_is_an_empty_scan(tmp_path: Path) -> None:
-    assert parse_semgrep(_write(tmp_path, {"errors": []})) == []
+def test_parse_semgrep_rejects_an_object_with_no_results_key(tmp_path: Path) -> None:
+    # e.g. a ZAP report passed as --semgrep
+    with pytest.raises(ValueError, match="'results'"):
+        parse_semgrep(_write(tmp_path, {"site": []}))
+
+
+def test_parse_semgrep_empty_results_is_an_empty_scan(tmp_path: Path) -> None:
+    assert parse_semgrep(_write(tmp_path, {"results": [], "errors": []})) == []

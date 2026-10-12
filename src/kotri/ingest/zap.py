@@ -95,12 +95,12 @@ def parse_zap(path: Path) -> list[Finding]:
 
     Alerts or instances missing expected fields or holding the wrong types are
     skipped and logged rather than aborting the whole parse. A file that isn't a
-    JSON object raises ValueError.
+    JSON object, or has no top-level "site" key, raises ValueError.
     """
-    data = load_report(path)
+    data = load_report(path, required_key="site")
 
     findings: list[Finding] = []
-    for site in dict_items(data.get("site", []), "ZAP sites"):
+    for site in dict_items(data["site"], "ZAP sites"):
         for alert in dict_items(site.get("alerts", []), "ZAP alerts"):
             try:
                 rule = alert["alert"]

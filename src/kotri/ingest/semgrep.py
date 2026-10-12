@@ -87,13 +87,13 @@ def parse_semgrep(path: Path) -> list[Finding]:
     """Parse a Semgrep JSON report into normalized Findings.
 
     Results missing expected fields or holding the wrong types are skipped and
-    logged rather than aborting the whole parse. A file that isn't a JSON object
-    raises ValueError.
+    logged rather than aborting the whole parse. A file that isn't a JSON object, or
+    has no top-level "results" key, raises ValueError.
     """
-    data = load_report(path)
+    data = load_report(path, required_key="results")
 
     findings: list[Finding] = []
-    for result in dict_items(data.get("results", []), "Semgrep results"):
+    for result in dict_items(data["results"], "Semgrep results"):
         finding = _parse_result(result)
         if finding is not None:
             findings.append(finding)
