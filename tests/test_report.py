@@ -1,3 +1,4 @@
+import re
 from collections.abc import Callable
 
 from kotri.ingest.models import Finding, Severity
@@ -124,11 +125,35 @@ def test_untrusted_text_cannot_inject_markup(
     assert "\n# Heading" not in report
     assert "<script>" not in report and "<img" not in report
     assert "&lt;script>" in report
-    assert "> # Heading" in report
+    assert "> \\# Heading" in report
     assert len(_headings(report)) == 1
     # Both the rule and location code spans use a fence longer than their inner backticks.
     assert "```http://x/`` `<b>```" in report
     assert "``evil` # fake heading``" in report
+
+
+def test_model_text_cannot_form_links_or_images(
+    make_finding: Callable[..., Finding], make_outcome: Callable[..., TriageOutcome]
+) -> None:
+    outcome = make_outcome(
+        "a",
+        exploitability_rationale="![x](http://evil/?d=1)\n![y][r]\n[r]: http://evil/2",
+        suggested_fix="[click](http://evil)\nTitle\n-----",
+    )
+    item = TriagedFinding(make_finding(id="a"), outcome)
+    report = render_report(PipelineResult(model="m", items=[item]))
+    quoted = "\n".join(line for line in report.splitlines() if line.startswith(">"))
+    assert not re.search(r"(?<!\\)[\[\]]", quoted)
+    assert "\\[x\\](http://evil/?d=1)" in report
+    assert "> \\[r\\]: http://evil/2" in report
+    assert "> \\-----" in report
+
+
+def test_untriaged_error_text_is_escaped(make_finding: Callable[..., Finding]) -> None:
+    item = TriagedFinding(make_finding(id="a"), error="bad ![x](http://evil) <b>")
+    report = render_report(PipelineResult(model="m", items=[item]))
+    assert not re.search(r"(?<!\\)[\[\]]", report.split("## Not triaged")[1])
+    assert "<b>" not in report
 
 
 def test_missing_fix_is_omitted(

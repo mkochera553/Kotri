@@ -1,8 +1,8 @@
 """Ranked Markdown report of triaged findings.
 
 Rule, location and the model's text all originate outside this program, so they are
-rendered as code spans or blockquotes with HTML escaped and cannot add headings or
-markup of their own.
+rendered as code spans or blockquotes with HTML and link/image/heading syntax escaped,
+so they cannot add headings, links or images of their own.
 """
 
 from __future__ import annotations
@@ -55,10 +55,22 @@ def _code(text: str) -> str:
     return f"{fence}{pad}{line}{pad}{fence}"
 
 
-def _quote(text: str) -> str:
-    """text as an HTML-escaped blockquote."""
+def _escape(text: str) -> str:
+    """text with HTML and the Markdown that can fetch or restructure content neutralised.
+
+    Brackets are backslash-escaped so no inline or reference link or image can form
+    (a rendered image is fetched automatically, which would send data off this machine).
+    A leading ``#`` and lines made only of ``-`` or ``=`` are escaped so the text cannot
+    become a heading.
+    """
     escaped = text.replace("&", "&amp;").replace("<", "&lt;")
-    return "\n".join(f"> {line}" if line else ">" for line in escaped.splitlines())
+    escaped = re.sub(r"([\\\[\]!#])", r"\\\1", escaped)
+    return re.sub(r"^(\s*)([-=])", r"\1\\\2", escaped, flags=re.MULTILINE)
+
+
+def _quote(text: str) -> str:
+    """text as an escaped blockquote."""
+    return "\n".join(f"> {line}" if line else ">" for line in _escape(text).splitlines())
 
 
 def _header(result: PipelineResult, triaged: list[TriagedFinding]) -> list[str]:
@@ -122,8 +134,7 @@ def _ranked_entry(rank: int, item: TriagedFinding) -> list[str]:
 
 def _untriaged_entry(item: TriagedFinding) -> str:
     finding = item.finding
-    reason = single_line(item.error or "no result", _MAX_INLINE_CHARS)
-    reason = reason.replace("&", "&amp;").replace("<", "&lt;")
+    reason = _escape(single_line(item.error or "no result", _MAX_INLINE_CHARS))
     return (
         f"- {_code(finding.rule)} at {_code(finding.location)} - "
         f"{finding.source_tool.value}, scanner severity {finding.severity.value}: {reason}"
