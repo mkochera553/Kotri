@@ -19,11 +19,17 @@ logger = logging.getLogger(__name__)
 def load_report(path: Path, required_key: str | None = None) -> dict[str, Any]:
     """Read a JSON report whose top level must be an object, else raise ValueError.
 
+    Every ValueError names the file, so with two reports given the user can tell which
+    one is bad. A missing or unreadable file raises OSError, which already names it.
+
     `required_key` is a top-level key every report of the expected format has, even when
     it found nothing. Without it, a report from the other tool (or any unrelated JSON
     object) would parse as an empty scan instead of being rejected.
     """
-    data = json.loads(Path(path).read_text(encoding="utf-8"))
+    try:
+        data = json.loads(Path(path).read_text(encoding="utf-8"))
+    except ValueError as exc:  # JSONDecodeError and UnicodeDecodeError, neither names the file
+        raise ValueError(f"{path}: not valid JSON: {exc}") from exc
     if not isinstance(data, dict):
         raise ValueError(
             f"{path}: expected a JSON object at the top level, got {type(data).__name__}"

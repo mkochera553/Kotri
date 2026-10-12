@@ -59,6 +59,34 @@ def test_ties_break_on_verdict_then_id(
     assert ["tp" in headings[0], "review" in headings[1], "fp" in headings[2]] == [True] * 3
 
 
+def test_likely_false_positives_rank_after_all_other_verdicts(
+    make_finding: Callable[..., Finding], make_outcome: Callable[..., TriageOutcome]
+) -> None:
+    items = [
+        TriagedFinding(
+            make_finding(id="a", rule="fp-critical"),
+            make_outcome(
+                "a", verdict=Verdict.LIKELY_FALSE_POSITIVE, adjusted_severity=Severity.CRITICAL
+            ),
+        ),
+        TriagedFinding(
+            make_finding(id="b", rule="tp-low"), make_outcome("b", adjusted_severity=Severity.LOW)
+        ),
+        TriagedFinding(
+            make_finding(id="c", rule="review-medium"),
+            make_outcome("c", verdict=Verdict.NEEDS_REVIEW, adjusted_severity=Severity.MEDIUM),
+        ),
+        TriagedFinding(
+            make_finding(id="d", rule="fp-low"),
+            make_outcome("d", verdict=Verdict.LIKELY_FALSE_POSITIVE, adjusted_severity=Severity.LOW),
+        ),
+    ]
+    headings = _headings(render_report(PipelineResult(model="m", items=items)))
+    order = [next(r for r in ("review-medium", "tp-low", "fp-critical", "fp-low") if r in h) for h in headings]
+    # Non-dismissed by severity, then dismissed by severity.
+    assert order == ["review-medium", "tp-low", "fp-critical", "fp-low"]
+
+
 def test_untriaged_findings_are_listed_last_not_ranked(
     make_finding: Callable[..., Finding], make_outcome: Callable[..., TriageOutcome]
 ) -> None:

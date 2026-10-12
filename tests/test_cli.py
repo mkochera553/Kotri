@@ -103,6 +103,22 @@ def test_runtime_failure_exits_1_but_still_writes_the_report(
     assert "connection refused" in output.read_text(encoding="utf-8")
 
 
+def test_truncated_scan_exits_2_and_names_the_bad_file(
+    fake_client: type[FakeClient], config_path: Path, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    truncated = tmp_path / "zap-truncated.json"
+    truncated.write_text('{"site": [', encoding="utf-8")
+    code = cli.main([
+        "--semgrep", str(FIXTURES / "semgrep_sample.json"),
+        "--zap", str(truncated),
+        "--config", str(config_path),
+        "--output", str(tmp_path / "report.md"),
+    ])
+    assert code == 2
+    err = capsys.readouterr().err
+    assert "zap-truncated.json" in err and "not valid JSON" in err
+
+
 def test_output_that_is_a_directory_exits_2_before_triage(
     fake_client: type[FakeClient], config_path: Path, tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:

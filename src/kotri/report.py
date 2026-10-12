@@ -22,6 +22,7 @@ SEVERITY_RANK = {
     Severity.CRITICAL: 4,
 }
 # Within one severity, confirmed issues come before undecided ones, then dismissals.
+# Dismissals also sort after every other verdict regardless of severity; see _sort_key.
 _VERDICT_RANK = {
     Verdict.LIKELY_TRUE_POSITIVE: 0,
     Verdict.NEEDS_REVIEW: 1,
@@ -34,11 +35,16 @@ def _is_triaged(item: TriagedFinding) -> bool:
     return item.outcome is not None and item.outcome.result is not None
 
 
-def _sort_key(item: TriagedFinding) -> tuple[int, int, int, str]:
-    """Ascending sort key that puts the highest adjusted severity first."""
+def _sort_key(item: TriagedFinding) -> tuple[bool, int, int, int, str]:
+    """Ascending sort key: likely false positives last, then highest adjusted severity.
+
+    Dismissals sit below everything else so a high-severity false positive cannot outrank
+    a real medium; within each group the order is by adjusted severity.
+    """
     assert item.outcome is not None and item.outcome.result is not None
     result = item.outcome.result
     return (
+        result.verdict is Verdict.LIKELY_FALSE_POSITIVE,
         -SEVERITY_RANK[result.adjusted_severity],
         _VERDICT_RANK[result.verdict],
         -SEVERITY_RANK[item.finding.severity],
@@ -143,6 +149,8 @@ def _untriaged_entry(item: TriagedFinding) -> str:
 
 def render_report(result: PipelineResult) -> str:
     """Markdown report: findings ranked by the model's adjusted severity, highest first.
+
+    Findings the model judged likely false positives are ranked after all the others.
 
     Findings with no triage result (parse failure, runtime error, aborted run) have no
     adjusted severity to rank by, so they are listed last with the scanner's severity.
