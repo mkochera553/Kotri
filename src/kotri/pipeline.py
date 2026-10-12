@@ -45,6 +45,14 @@ class PipelineResult:
     duplicates_dropped: int = 0
     aborted: bool = False
 
+    @property
+    def incomplete(self) -> bool:
+        """True if any finding got no outcome at all: a runtime error or an aborted run.
+
+        A parse failure still has an outcome, so it does not count; it is an eval metric.
+        """
+        return self.aborted or any(item.outcome is None for item in self.items)
+
 
 def load_findings(semgrep: Path | None = None, zap: Path | None = None) -> list[Finding]:
     """Parse whichever scan reports were given into one Finding list."""

@@ -51,7 +51,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     args.output.parent.mkdir(parents=True, exist_ok=True)
     args.output.write_text(render_report(result), encoding="utf-8")
     print(f"Wrote {args.output} ({len(result.items)} findings)")
-    return 1 if result.aborted else 0
+    return 1 if result.incomplete else 0
 
 
 if __name__ == "__main__":

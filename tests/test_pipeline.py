@@ -93,6 +93,24 @@ def test_runtime_error_is_recorded_and_run_continues(
     assert first.outcome is None and first.error == "timed out"
     assert second.outcome is not None
     assert not result.aborted
+    assert result.incomplete
+
+
+def test_runtime_down_for_a_short_scan_is_incomplete_though_not_aborted(
+    make_finding: Callable[..., Finding]
+) -> None:
+    findings = [make_finding(id=str(n)) for n in range(MAX_CONSECUTIVE_TRANSPORT_ERRORS)]
+    result = triage_all(findings, FakeTriager({f.id: LLMError("down") for f in findings}))
+    assert not result.aborted  # nothing was left to skip
+    assert result.incomplete
+
+
+def test_complete_run_and_parse_failures_are_not_incomplete(
+    make_finding: Callable[..., Finding], make_outcome: Callable[..., TriageOutcome]
+) -> None:
+    triager = FakeTriager({"a": make_outcome("a"), "b": make_outcome("b", result=None)})
+    result = triage_all([make_finding(id="a"), make_finding(id="b")], triager)
+    assert not result.incomplete
 
 
 def test_repeated_runtime_errors_abort_the_run(make_finding: Callable[..., Finding]) -> None:

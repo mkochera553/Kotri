@@ -6,7 +6,7 @@ import pytest
 
 from kotri import cli
 from kotri.ingest.models import Finding, Severity
-from kotri.llm.client import ParseStats, TriageOutcome
+from kotri.llm.client import LLMError, ParseStats, TriageOutcome
 
 FIXTURES = Path(__file__).parent / "fixtures"
 CONFIG = """\
@@ -82,6 +82,25 @@ def test_one_command_writes_a_ranked_report(
     assert str(output) in capsys.readouterr().out
     (client,) = fake_client.instances
     assert client.logged
+
+
+def test_runtime_failure_exits_1_but_still_writes_the_report(
+    monkeypatch: pytest.MonkeyPatch, config_path: Path, tmp_path: Path
+) -> None:
+    def always_down(finding: Finding) -> TriageOutcome:
+        raise LLMError("connection refused")
+
+    monkeypatch.setattr(
+        cli.LLMClient, "from_config", staticmethod(lambda cfg, model: FakeClient(model, always_down))
+    )
+    output = tmp_path / "report.md"
+    code = cli.main([
+        "--zap", str(FIXTURES / "zap_sample.json"),
+        "--config", str(config_path),
+        "--output", str(output),
+    ])
+    assert code == 1
+    assert "connection refused" in output.read_text(encoding="utf-8")
 
 
 def test_model_defaults_to_first_in_config_and_can_be_overridden(
