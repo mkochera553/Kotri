@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import math
 from collections.abc import Mapping
 from pathlib import Path
 from typing import Any
@@ -51,3 +52,34 @@ def _check_llm(llm: Mapping[str, Any], path: Path) -> None:
         or not all(isinstance(m, str) and m for m in models)
     ):
         raise ConfigError(f"{path}: llm.models must be a non-empty list of model names")
+
+    _check_number(llm, "timeout_seconds", path, integer=False, minimum=0, exclusive=True)
+    _check_number(llm, "max_retries", path, integer=True, minimum=0)
+    _check_number(llm, "max_tokens", path, integer=True, minimum=0, exclusive=True)
+
+
+def _check_number(
+    llm: Mapping[str, Any],
+    key: str,
+    path: Path,
+    *,
+    integer: bool,
+    minimum: int,
+    exclusive: bool = False,
+) -> None:
+    """If `key` is set it must be a number (an integer if `integer`) above/at `minimum`.
+
+    A key that is absent uses the client's default; one that is present but null or the
+    wrong type is an error, since passing it on would crash the client mid-run.
+    """
+    if key not in llm:
+        return
+    value = llm[key]
+    kind = "an integer" if integer else "a number"
+    is_number = isinstance(value, int) if integer else isinstance(value, (int, float))
+    # bool is an int subclass, but `max_retries: true` is a typo, not a count.
+    if isinstance(value, bool) or not is_number or not math.isfinite(value):
+        raise ConfigError(f"{path}: llm.{key} must be {kind}, got {value!r}")
+    if value < minimum or (exclusive and value == minimum):
+        bound = f"greater than {minimum}" if exclusive else f"at least {minimum}"
+        raise ConfigError(f"{path}: llm.{key} must be {bound}, got {value!r}")

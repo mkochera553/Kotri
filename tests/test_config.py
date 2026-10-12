@@ -57,6 +57,50 @@ def test_base_url_must_be_a_string(tmp_path: Path) -> None:
         load_config(_write(tmp_path, "llm:\n  models: [a]\n"))
 
 
+def _with(extra: str) -> str:
+    return f"llm:\n  base_url: http://localhost:11434/v1\n  models: [a]\n  {extra}\n"
+
+
+@pytest.mark.parametrize(
+    "extra",
+    [
+        "timeout_seconds: 0.5",
+        "timeout_seconds: 120",
+        "max_retries: 0",
+        "max_retries: 5",
+        "max_tokens: 1024",
+        "timeout_seconds: 30\n  max_retries: 2\n  max_tokens: 512",
+    ],
+)
+def test_valid_numeric_settings_are_accepted(tmp_path: Path, extra: str) -> None:
+    assert load_config(_write(tmp_path, _with(extra)))["models"] == ["a"]
+
+
+@pytest.mark.parametrize(
+    ("extra", "key"),
+    [
+        ("timeout_seconds: '120'", "timeout_seconds"),
+        ("timeout_seconds:", "timeout_seconds"),  # null
+        ("timeout_seconds: 0", "timeout_seconds"),
+        ("timeout_seconds: -5", "timeout_seconds"),
+        ("timeout_seconds: .nan", "timeout_seconds"),
+        ("timeout_seconds: .inf", "timeout_seconds"),
+        ("timeout_seconds: true", "timeout_seconds"),
+        ("max_retries: -1", "max_retries"),
+        ("max_retries: 1.5", "max_retries"),
+        ("max_retries: '2'", "max_retries"),
+        ("max_retries: false", "max_retries"),
+        ("max_tokens:", "max_tokens"),  # null
+        ("max_tokens: 0", "max_tokens"),
+        ("max_tokens: 10.5", "max_tokens"),
+        ("max_tokens: lots", "max_tokens"),
+    ],
+)
+def test_bad_numeric_settings_are_rejected(tmp_path: Path, extra: str, key: str) -> None:
+    with pytest.raises(ConfigError, match=f"llm.{key}"):
+        load_config(_write(tmp_path, _with(extra)))
+
+
 @pytest.mark.parametrize("models", ["[]", "a", "[1]", "['']"])
 def test_models_must_be_nonempty_list_of_names(tmp_path: Path, models: str) -> None:
     text = f"llm:\n  base_url: http://localhost:11434/v1\n  models: {models}\n"
