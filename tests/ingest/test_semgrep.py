@@ -94,14 +94,22 @@ def _write(tmp_path: Path, report: Any) -> Path:
         ("WARNING", Severity.MEDIUM),
         ("INFO", Severity.LOW),
         ("error", Severity.HIGH),
-        ("EXPERIMENT", Severity.CRITICAL),  # unrecognized falls back to critical
-        (3, Severity.CRITICAL),  # wrong type is unrecognized, not a crash
-        (None, Severity.CRITICAL),
     ],
 )
 def test_parse_semgrep_severity_values(tmp_path: Path, raw: Any, expected: Severity) -> None:
     findings = parse_semgrep(_write(tmp_path, {"results": [_result(severity=raw)]}))
     assert [f.severity for f in findings] == [expected]
+
+
+@pytest.mark.parametrize("raw", ["EXPERIMENT", "INVENTORY", 3, None])
+def test_parse_semgrep_unrecognized_severity_is_neutral_and_logged(
+    tmp_path: Path, raw: Any, caplog: pytest.LogCaptureFixture
+) -> None:
+    with caplog.at_level(logging.WARNING, logger="kotri.ingest"):
+        findings = parse_semgrep(_write(tmp_path, {"results": [_result(severity=raw)]}))
+
+    assert [f.severity for f in findings] == [Severity.MEDIUM]  # not critical
+    assert "unrecognized Semgrep severity" in caplog.text and "rule-a" in caplog.text
 
 
 @pytest.mark.parametrize(
@@ -209,5 +217,11 @@ def test_parse_semgrep_details_do_not_change_the_finding_id(tmp_path: Path) -> N
     assert plain.raw_message != rich.raw_message
 
 
-def test_parse_semgrep_missing_results_key_is_an_empty_scan(tmp_path: Path) -> None:
-    assert parse_semgrep(_write(tmp_path, {"errors": []})) == []
+def test_parse_semgrep_rejects_an_object_with_no_results_key(tmp_path: Path) -> None:
+    # e.g. a ZAP report passed as --semgrep
+    with pytest.raises(ValueError, match="'results'"):
+        parse_semgrep(_write(tmp_path, {"site": []}))
+
+
+def test_parse_semgrep_empty_results_is_an_empty_scan(tmp_path: Path) -> None:
+    assert parse_semgrep(_write(tmp_path, {"results": [], "errors": []})) == []

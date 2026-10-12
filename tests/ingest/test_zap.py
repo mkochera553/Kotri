@@ -133,8 +133,6 @@ def _write(tmp_path: Path, report: Any) -> Path:
         (0, Severity.INFO),  # some report formats emit a number, not a string
         (2, Severity.MEDIUM),
         (3, Severity.HIGH),
-        ("9", Severity.CRITICAL),  # unrecognized falls back to critical
-        (None, Severity.CRITICAL),
     ],
 )
 def test_parse_zap_riskcode_values(tmp_path: Path, riskcode: Any, expected: Severity) -> None:
@@ -142,13 +140,22 @@ def test_parse_zap_riskcode_values(tmp_path: Path, riskcode: Any, expected: Seve
     assert [f.severity for f in findings] == [expected]
 
 
+@pytest.mark.parametrize("riskcode", ["9", "high", None])
+def test_parse_zap_unrecognized_riskcode_is_neutral_and_logged(
+    tmp_path: Path, riskcode: Any, caplog: pytest.LogCaptureFixture
+) -> None:
+    with caplog.at_level(logging.WARNING, logger="kotri.ingest"):
+        findings = parse_zap(_write(tmp_path, _report(_alert(riskcode=riskcode))))
+
+    assert [f.severity for f in findings] == [Severity.MEDIUM]  # not critical
+    assert "unrecognized ZAP riskcode" in caplog.text and "Alert A" in caplog.text
+
+
 @pytest.mark.parametrize(
     "bad_alert",
     [
         _alert(alert=None),
         _alert(alert=["x"]),
-        _alert(desc=None),  # re.sub on a non-string
-        _alert(desc=5),
         "not an object",
         None,
     ],
@@ -161,6 +168,21 @@ def test_parse_zap_skips_wrong_typed_alerts_and_keeps_the_rest(
 
     assert [f.rule for f in findings] == ["Alert A"]
     assert caplog.records
+
+
+@pytest.mark.parametrize("desc", [None, 5, ["x"], {}])
+def test_parse_zap_keeps_instances_when_desc_is_not_a_string(tmp_path: Path, desc: Any) -> None:
+    findings = parse_zap(_write(tmp_path, _report(_alert(desc=desc))))
+    (finding,) = findings
+    assert finding.rule == "Alert A"
+    assert finding.raw_message == ""  # no description; the finding itself is not lost
+
+
+def test_parse_zap_keeps_instances_when_desc_is_missing(tmp_path: Path) -> None:
+    alert = _alert(instances=[{"uri": "http://h/", "evidence": "<script>x</script>"}])
+    del alert["desc"]
+    (finding,) = parse_zap(_write(tmp_path, _report(alert)))
+    assert finding.raw_message == "Evidence: <script>x</script>"
 
 
 @pytest.mark.parametrize(
@@ -284,6 +306,16 @@ def test_parse_zap_tolerates_malformed_sites(tmp_path: Path, sites: Any) -> None
 @pytest.mark.parametrize("alerts", [None, "x", {}])
 def test_parse_zap_tolerates_non_list_alerts(tmp_path: Path, alerts: Any) -> None:
     assert parse_zap(_write(tmp_path, {"site": [{"alerts": alerts}]})) == []
+
+
+def test_parse_zap_rejects_an_object_with_no_site_key(tmp_path: Path) -> None:
+    # e.g. a Semgrep report passed as --zap
+    with pytest.raises(ValueError, match="'site'"):
+        parse_zap(_write(tmp_path, {"results": []}))
+
+
+def test_parse_zap_empty_site_list_is_an_empty_scan(tmp_path: Path) -> None:
+    assert parse_zap(_write(tmp_path, {"site": []})) == []
 
 
 @pytest.mark.parametrize("report", [[], "text", 5, None])

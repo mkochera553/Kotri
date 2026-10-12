@@ -21,6 +21,11 @@ class Severity(str, Enum):
     CRITICAL = "critical"
 
 
+# What a parser assigns when the scanner's severity is missing or unrecognized. Neutral on
+# purpose: guessing critical would outrank real findings in the report.
+UNKNOWN_SEVERITY = Severity.MEDIUM
+
+
 class Finding(BaseModel):
     id: str
     source_tool: SourceTool
