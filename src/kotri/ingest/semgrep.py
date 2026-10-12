@@ -7,7 +7,7 @@ from pathlib import Path
 from typing import Any
 
 from kotri.ingest.jsonshape import dict_items, load_report
-from kotri.ingest.models import Finding, Severity, SourceTool, make_finding_id
+from kotri.ingest.models import UNKNOWN_SEVERITY, Finding, Severity, SourceTool, make_finding_id
 from kotri.ingest.text import clip, compose_message
 
 logger = logging.getLogger(__name__)
@@ -25,8 +25,15 @@ _SEVERITY_MAP = {
 }
 
 
-def _normalize_severity(raw: object) -> Severity:
-    return _SEVERITY_MAP.get(str(raw).upper(), Severity.CRITICAL) # Finding severity defaults to critical if tool outputs unrecognized severity string.
+def _normalize_severity(raw: object, rule: object) -> Severity:
+    severity = _SEVERITY_MAP.get(str(raw).upper())
+    if severity is None:
+        logger.warning(
+            "unrecognized Semgrep severity %r for %s; using %s",
+            raw, rule, UNKNOWN_SEVERITY.value,
+        )
+        return UNKNOWN_SEVERITY
+    return severity
 
 
 def _values(value: object) -> str:
@@ -65,7 +72,7 @@ def _parse_result(result: dict[str, Any]) -> Finding | None:
         rule = result["check_id"]
         location = f"{result['path']}:{result['start']['line']}"
         extra = result["extra"]
-        severity = _normalize_severity(extra["severity"])
+        severity = _normalize_severity(extra["severity"], rule)
         message = extra["message"]
         if not isinstance(rule, str) or not isinstance(message, str):
             raise TypeError("check_id and message must be strings")

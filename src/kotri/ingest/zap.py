@@ -8,7 +8,7 @@ from pathlib import Path
 from typing import Any
 
 from kotri.ingest.jsonshape import dict_items, load_report
-from kotri.ingest.models import Finding, Severity, SourceTool, make_finding_id
+from kotri.ingest.models import UNKNOWN_SEVERITY, Finding, Severity, SourceTool, make_finding_id
 from kotri.ingest.text import clip, compose_message
 
 logger = logging.getLogger(__name__)
@@ -26,9 +26,16 @@ _TAG_RE = re.compile(r"<[^>]+>")
 _WHITESPACE_RE = re.compile(r"\s+")
 
 
-def _normalize_severity(riskcode: object) -> Severity:
+def _normalize_severity(riskcode: object, rule: object) -> Severity:
     # str() because some ZAP report formats emit riskcode as a number, not "2".
-    return _RISKCODE_MAP.get(str(riskcode), Severity.CRITICAL) # Finding severity defaults to critical if tool outputs unrecognized severity string.
+    severity = _RISKCODE_MAP.get(str(riskcode))
+    if severity is None:
+        logger.warning(
+            "unrecognized ZAP riskcode %r for %s; using %s",
+            riskcode, rule, UNKNOWN_SEVERITY.value,
+        )
+        return UNKNOWN_SEVERITY
+    return severity
 
 
 def _strip_html(text: str) -> str:
@@ -106,7 +113,7 @@ def parse_zap(path: Path) -> list[Finding]:
                 rule = alert["alert"]
                 if not isinstance(rule, str):
                     raise TypeError("alert name must be a string")
-                severity = _normalize_severity(alert["riskcode"])
+                severity = _normalize_severity(alert["riskcode"], rule)
                 description = _strip_html(alert.get("desc", ""))
             except (KeyError, TypeError) as exc:
                 logger.warning("skipping malformed ZAP alert: %s", exc)

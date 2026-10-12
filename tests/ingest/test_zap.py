@@ -133,13 +133,22 @@ def _write(tmp_path: Path, report: Any) -> Path:
         (0, Severity.INFO),  # some report formats emit a number, not a string
         (2, Severity.MEDIUM),
         (3, Severity.HIGH),
-        ("9", Severity.CRITICAL),  # unrecognized falls back to critical
-        (None, Severity.CRITICAL),
     ],
 )
 def test_parse_zap_riskcode_values(tmp_path: Path, riskcode: Any, expected: Severity) -> None:
     findings = parse_zap(_write(tmp_path, _report(_alert(riskcode=riskcode))))
     assert [f.severity for f in findings] == [expected]
+
+
+@pytest.mark.parametrize("riskcode", ["9", "high", None])
+def test_parse_zap_unrecognized_riskcode_is_neutral_and_logged(
+    tmp_path: Path, riskcode: Any, caplog: pytest.LogCaptureFixture
+) -> None:
+    with caplog.at_level(logging.WARNING, logger="kotri.ingest"):
+        findings = parse_zap(_write(tmp_path, _report(_alert(riskcode=riskcode))))
+
+    assert [f.severity for f in findings] == [Severity.MEDIUM]  # not critical
+    assert "unrecognized ZAP riskcode" in caplog.text and "Alert A" in caplog.text
 
 
 @pytest.mark.parametrize(
